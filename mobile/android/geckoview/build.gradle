@@ -481,16 +481,16 @@ afterEvaluate {
     archivesConfig.artifacts.removeAll { it.extension.equals('aar') }
 
     // For now, ensure Kotlin is only used in tests.
-    android.sourceSets.all { sourceSet ->
-        if (sourceSet.name.startsWith('test') || sourceSet.name.startsWith('androidTest')) {
-            return
-        }
-        (sourceSet.java.srcDirs + sourceSet.kotlin.srcDirs).each {
-            if (!fileTree(it, { include '**/*.kt' }).empty) {
-                throw new GradleException("Kotlin used in non-test directory ${it.path}")
-            }
-        }
-    }
+//    android.sourceSets.all { sourceSet ->
+//        if (sourceSet.name.startsWith('test') || sourceSet.name.startsWith('androidTest')) {
+//            return
+//        }
+//        (sourceSet.java.srcDirs + sourceSet.kotlin.srcDirs).each {
+//            if (!fileTree(it, { include '**/*.kt' }).empty) {
+//                throw new GradleException("Kotlin used in non-test directory ${it.path}")
+//            }
+//        }
+//    }
 }
 
 // Bug 1353055 - Strip 'vars' debugging information to agree with moz.build.

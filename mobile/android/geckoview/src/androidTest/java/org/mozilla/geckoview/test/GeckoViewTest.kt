@@ -43,7 +43,7 @@ class GeckoViewTest : BaseSessionTest() {
     fun setup() {
         activityRule.scenario.onActivity {
             // Attach the default session from the session rule to the GeckoView
-            it.view.setSession(sessionRule.session)
+            it.view.session = sessionRule.session
         }
     }
 
@@ -58,7 +58,7 @@ class GeckoViewTest : BaseSessionTest() {
     fun setSessionOnClosed() {
         activityRule.scenario.onActivity {
             it.view.session!!.close()
-            it.view.setSession(GeckoSession())
+            it.view.session = GeckoSession()
         }
     }
 
@@ -67,7 +67,7 @@ class GeckoViewTest : BaseSessionTest() {
         activityRule.scenario.onActivity {
             assertThat("Session is open", it.view.session!!.isOpen, equalTo(true))
             val newSession = GeckoSession()
-            it.view.setSession(newSession)
+            it.view.session = newSession
             assertThat(
                 "The new session should be correctly set.",
                 it.view.session,
@@ -118,7 +118,7 @@ class GeckoViewTest : BaseSessionTest() {
             // Larger oom_score_adj indicates lower priority, with 900 indicating background visibility
             // and the process may be killed.
             shouldBeHighPri.count { it == 0 } == shouldBeHighPri.size &&
-                shouldBeLowPri.count { it >= 900 } == shouldBeLowPri.size
+                    shouldBeLowPri.count { it >= 900 } == shouldBeLowPri.size
         }, env.defaultTimeoutMillis)
     }
 
@@ -187,7 +187,7 @@ class GeckoViewTest : BaseSessionTest() {
             mainSession.setPriorityHint(GeckoSession.PRIORITY_HIGH)
 
             // This will destroy mainSession's surface and create a surface for otherSession
-            it.view.setSession(otherSession)
+            it.view.session = otherSession
 
             waitUntilContentProcessPriority(high = listOf(mainSession, otherSession), low = listOf())
 
@@ -210,7 +210,7 @@ class GeckoViewTest : BaseSessionTest() {
 
             // After setting otherSession to the view, otherSession should be high priority
             // and mainSession should be de-prioritized
-            it.view.setSession(otherSession)
+            it.view.session = otherSession
 
             waitUntilContentProcessPriority(
                 high = listOf(otherSession),
@@ -226,7 +226,7 @@ class GeckoViewTest : BaseSessionTest() {
             )
 
             // Test that re-setting mainSession in the view raises the priority again
-            it.view.setSession(mainSession)
+            it.view.session = mainSession
             waitUntilContentProcessPriority(
                 high = listOf(mainSession),
                 low = listOf(otherSession),
@@ -371,7 +371,7 @@ class GeckoViewTest : BaseSessionTest() {
             it.view.autofill(data)
 
             // Put back the session and verifies that the autofill went through anyway
-            it.view.setSession(session)
+            it.view.session = session
 
             // Wait on the promises and check for correct values.
             for (values in promises.map { p -> p.value.asJsonArray() }) {
@@ -402,7 +402,7 @@ class GeckoViewTest : BaseSessionTest() {
             }
             // Set view delegate
             it.view.activityContextDelegate = TestActivityDelegate()
-            val context = it.view.activityContextDelegate?.activityContext
+            val context = it.view.activityContextDelegate?.getActivityContext()
             assertTrue("The activity context delegate was called.", delegateCalled)
             assertTrue("The activity context delegate provided the expected context.", context == it)
         }
