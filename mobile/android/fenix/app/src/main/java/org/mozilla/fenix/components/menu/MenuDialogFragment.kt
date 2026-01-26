@@ -30,7 +30,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
@@ -42,7 +41,9 @@ import androidx.core.graphics.drawable.toDrawable
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat.Type.systemBars
+import androidx.lifecycle.coroutineScope
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavHostController
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -58,6 +59,7 @@ import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.concept.engine.translate.TranslationSupport
 import mozilla.components.concept.engine.translate.findLanguage
 import mozilla.components.feature.addons.Addon
+import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import mozilla.components.service.fxa.manager.AccountState.NotAuthenticated
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.android.util.dpToPx
@@ -241,6 +243,116 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
     ): View = ComposeView(requireContext()).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
 
+        val lifecycleScope = viewLifecycleOwner.lifecycle.coroutineScope
+        val appStore = requireComponents.appStore
+        val appLinksUseCases = requireComponents.useCases.appLinksUseCases
+        val webAppUseCases = requireComponents.useCases.webAppUseCases
+
+        val browserStore = requireComponents.core.store
+
+        val selectedTab = browserStore.state.selectedTab
+        val customTab = args.customTabSessionId?.let {
+            browserStore.state.findCustomTab(it)
+        }
+
+        val webCompatReporterMoreInfoSender =
+            DefaultWebCompatReporterMoreInfoSender(
+                webCompatReporterRetrievalService =
+                    DefaultWebCompatReporterRetrievalService(
+                        browserStore = requireComponents.core.store,
+                        webCompatInfoDeserializer = WebCompatInfoDeserializer(
+                            json = Json {
+                                ignoreUnknownKeys = true
+                                useAlternativeNames = false
+                            },
+                        ),
+                    ),
+            )
+
+        val store by fragmentStore(
+            initialState = MenuState(
+                browserMenuState = if (selectedTab != null) {
+                    BrowserMenuState(selectedTab = selectedTab)
+                } else {
+                    null
+                },
+                customTabSessionId = args.customTabSessionId,
+                isDesktopMode = when (args.accesspoint) {
+                    MenuAccessPoint.Home -> {
+                        false // this is not supported on Home
+                    }
+
+                    MenuAccessPoint.External -> {
+                        customTab?.content?.desktopMode ?: false
+                    }
+
+                    else -> {
+                        selectedTab?.content?.desktopMode ?: false
+                    }
+                },
+                extensionMenuState = ExtensionMenuState(
+                    accesspoint = args.accesspoint,
+                ),
+            ),
+        ) {
+            MenuStore(
+                initialState = it,
+                middleware = listOf(
+                    MenuDialogMiddleware(
+                        appStore = appStore,
+                        addonManager = requireComponents.addonManager,
+                        settings = requireComponents.settings,
+                        bookmarksStorage = requireComponents.core.bookmarksStorage,
+                        pinnedSiteStorage = requireComponents.core.pinnedSiteStorage,
+                        appLinksUseCases = appLinksUseCases,
+                        addBookmarkUseCase = requireComponents.useCases.bookmarksUseCases.addBookmark,
+                        addPinnedSiteUseCase = requireComponents.useCases.topSitesUseCase.addPinnedSites,
+                        removePinnedSitesUseCase = requireComponents.useCases.topSitesUseCase.removeTopSites,
+                        requestDesktopSiteUseCase = requireComponents.useCases.sessionUseCases.requestDesktopSite,
+                        materialAlertDialogBuilder = MaterialAlertDialogBuilder(context),
+                        topSitesMaxLimit = requireComponents.settings.topSitesMaxLimit,
+                        onDeleteAndQuit = {
+                            activity?.let { activity ->
+                                activity.lifecycleScope.launch {
+                                    deleteBrowsingDataController.clearBrowsingDataOnQuit {
+                                        activity.finishAndRemoveTask()
+                                    }
+                                }
+                            }
+                        },
+                        onDismiss = {
+                            withContext(Dispatchers.Main) {
+                                this@MenuDialogFragment.dismiss()
+                            }
+                        },
+                        onSendPendingIntentWithUrl = ::sendPendingIntentWithUrl,
+                        mainDispatcher = Dispatchers.Main,
+                        lastSavedFolderCache = context.settings().lastSavedFolderCache,
+                        lifecycleScope = lifecycleScope,
+                    ),
+                    MenuNavigationMiddleware(
+                        browserStore = browserStore,
+                        navController = findNavController(),
+                        openToBrowser = ::openToBrowser,
+                        sessionUseCases = requireComponents.useCases.sessionUseCases,
+                        webAppUseCases = webAppUseCases,
+                        settings = requireComponents.settings,
+                        onDismiss = {
+                            withContext(Dispatchers.Main) {
+                                this@MenuDialogFragment.dismiss()
+                            }
+                        },
+                        scope = lifecycleScope,
+                        customTab = customTab,
+                        webCompatReporterMoreInfoSender = webCompatReporterMoreInfoSender,
+                    ),
+                    MenuTelemetryMiddleware(
+                        accessPoint = args.accesspoint,
+                    ),
+                ),
+            )
+        }
+
         setContent {
             FirefoxTheme {
                 val context = LocalContext.current
@@ -248,113 +360,7 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                 val components = components
                 val settings = components.settings
                 val defaultBrowser = settings.isDefaultBrowser
-                val appStore = components.appStore
-                val browserStore = components.core.store
-
-                val selectedTab = browserStore.state.selectedTab
-                val customTab = args.customTabSessionId?.let {
-                    browserStore.state.findCustomTab(it)
-                }
-
-                val appLinksUseCases = components.useCases.appLinksUseCases
-                val webAppUseCases = components.useCases.webAppUseCases
-
-                val webCompatReporterMoreInfoSender =
-                    DefaultWebCompatReporterMoreInfoSender(
-                        webCompatReporterRetrievalService =
-                            DefaultWebCompatReporterRetrievalService(
-                                browserStore = requireComponents.core.store,
-                                webCompatInfoDeserializer = WebCompatInfoDeserializer(
-                                    json = Json {
-                                        ignoreUnknownKeys = true
-                                        useAlternativeNames = false
-                                    },
-                                ),
-                            ),
-                    )
-
-                val coroutineScope = rememberCoroutineScope()
                 val scrollState = rememberScrollState()
-
-                val store = remember {
-                    MenuStore(
-                        initialState = MenuState(
-                            browserMenuState = if (selectedTab != null) {
-                                BrowserMenuState(selectedTab = selectedTab)
-                            } else {
-                                null
-                            },
-                            customTabSessionId = args.customTabSessionId,
-                            isDesktopMode = when (args.accesspoint) {
-                                MenuAccessPoint.Home -> {
-                                    false // this is not supported on Home
-                                }
-                                MenuAccessPoint.External -> {
-                                    customTab?.content?.desktopMode ?: false
-                                }
-                                else -> {
-                                    selectedTab?.content?.desktopMode ?: false
-                                }
-                            },
-                            extensionMenuState = ExtensionMenuState(
-                                accesspoint = args.accesspoint,
-                            ),
-                        ),
-                        middleware = listOf(
-                            MenuDialogMiddleware(
-                                appStore = appStore,
-                                addonManager = components.addonManager,
-                                settings = settings,
-                                bookmarksStorage = components.core.bookmarksStorage,
-                                pinnedSiteStorage = components.core.pinnedSiteStorage,
-                                appLinksUseCases = appLinksUseCases,
-                                addBookmarkUseCase = components.useCases.bookmarksUseCases.addBookmark,
-                                addPinnedSiteUseCase = components.useCases.topSitesUseCase.addPinnedSites,
-                                removePinnedSitesUseCase = components.useCases.topSitesUseCase.removeTopSites,
-                                requestDesktopSiteUseCase = components.useCases.sessionUseCases.requestDesktopSite,
-                                materialAlertDialogBuilder = MaterialAlertDialogBuilder(context),
-                                topSitesMaxLimit = components.settings.topSitesMaxLimit,
-                                onDeleteAndQuit = {
-                                    activity?.let { activity ->
-                                        activity.lifecycleScope.launch {
-                                            deleteBrowsingDataController.clearBrowsingDataOnQuit {
-                                                activity.finishAndRemoveTask()
-                                            }
-                                        }
-                                    }
-                                },
-                                onDismiss = {
-                                    withContext(Dispatchers.Main) {
-                                        this@MenuDialogFragment.dismiss()
-                                    }
-                                },
-                                onSendPendingIntentWithUrl = ::sendPendingIntentWithUrl,
-                                mainDispatcher = Dispatchers.Main,
-                                lastSavedFolderCache = context.settings().lastSavedFolderCache,
-                                lifecycleScope = lifecycleScope
-                            ),
-                            MenuNavigationMiddleware(
-                                browserStore = browserStore,
-                                navController = findNavController(),
-                                openToBrowser = ::openToBrowser,
-                                sessionUseCases = components.useCases.sessionUseCases,
-                                webAppUseCases = webAppUseCases,
-                                settings = settings,
-                                onDismiss = {
-                                    withContext(Dispatchers.Main) {
-                                        this@MenuDialogFragment.dismiss()
-                                    }
-                                },
-                                scope = coroutineScope,
-                                customTab = customTab,
-                                webCompatReporterMoreInfoSender = webCompatReporterMoreInfoSender,
-                            ),
-                            MenuTelemetryMiddleware(
-                                accessPoint = args.accesspoint,
-                            ),
-                        ),
-                    )
-                }
 
                 val descCustom = stringResource(R.string.browser_custom_tab_menu_handlebar_content_description)
                 val descMain = stringResource(R.string.browser_close_main_menu_handlebar_content_description)
