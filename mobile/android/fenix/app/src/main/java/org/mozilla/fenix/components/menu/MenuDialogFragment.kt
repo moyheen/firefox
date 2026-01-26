@@ -331,6 +331,7 @@ class MenuDialogFragment : BottomSheetDialogFragment() {
                                 onSendPendingIntentWithUrl = ::sendPendingIntentWithUrl,
                                 mainDispatcher = Dispatchers.Main,
                                 lastSavedFolderCache = context.settings().lastSavedFolderCache,
+                                lifecycleScope = lifecycleScope
                             ),
                             MenuNavigationMiddleware(
                                 browserStore = browserStore,

@@ -93,10 +93,11 @@ class MenuDialogMiddleware(
     private val onSendPendingIntentWithUrl: (intent: PendingIntent, url: String?) -> Unit,
     private val lastSavedFolderCache: LastSavedFolderCache,
     private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    lifecycleScope: CoroutineScope,
 ) : Middleware<MenuState, MenuAction> {
 
     private val logger = Logger("MenuDialogMiddleware")
-    private val scope = CoroutineScope(mainDispatcher + SupervisorJob())
+    private val scope = CoroutineScope(lifecycleScope.coroutineContext + mainDispatcher + SupervisorJob())
 
     override fun invoke(
         store: Store<MenuState, MenuAction>,
