@@ -55,4 +55,16 @@
     <string name="remote_settings_server_prod_v2">production v2</string>
     <string name="remote_settings_server_dev_v2">development v2</string>
     <string name="remote_settings_server_stage_v2">staging v2</string>
+
+    <string-array name="reader_listen_variant_entries">
+        <item>@string/reader_listen_variant_off</item>
+        <item>@string/reader_listen_variant_toolbar</item>
+        <item>@string/reader_listen_variant_banner</item>
+    </string-array>
+
+    <string-array name="reader_listen_variant_entry_values">
+        <item>@string/reader_listen_variant_value_off</item>
+        <item>@string/reader_listen_variant_value_toolbar</item>
+        <item>@string/reader_listen_variant_value_banner</item>
+    </string-array>
 </resources>

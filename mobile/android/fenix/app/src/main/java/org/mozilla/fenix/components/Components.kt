@@ -264,6 +264,9 @@ class Components(private val context: Context) {
     }
     val publicSuffixList by lazyMonitored { PublicSuffixList(context) }
     val clipboardHandler by lazyMonitored { ClipboardHandler(context) }
+    val listen by lazyMonitored {
+        org.mozilla.fenix.browser.readermode.listen.ListenComponents(context)
+    }
     val performance by lazyMonitored { PerformanceComponent() }
     val push by lazyMonitored { Push(context, analytics.crashReporter) }
     val wifiConnectionMonitor by lazyMonitored { WifiConnectionMonitor(context as Application) }

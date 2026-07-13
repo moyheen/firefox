@@ -326,6 +326,7 @@ abstract class BaseBrowserFragment :
     private val biometricPromptFeature = ViewBoundFeatureWrapper<BiometricPromptFeature>()
     private val crashContentIntegration = ViewBoundFeatureWrapper<CrashContentIntegration>()
     private val readerViewBinding = ViewBoundFeatureWrapper<ReaderViewBinding>()
+    private val listenIntegration = ViewBoundFeatureWrapper<org.mozilla.fenix.browser.readermode.listen.ListenIntegration>()
     private val openInFirefoxBinding = ViewBoundFeatureWrapper<OpenInFirefoxBinding>()
     private val findInPageBinding = ViewBoundFeatureWrapper<FindInPageBinding>()
     private val snackbarBinding = ViewBoundFeatureWrapper<SnackbarBinding>()
@@ -574,6 +575,20 @@ abstract class BaseBrowserFragment :
             feature = ReaderViewBinding(
                 appStore = context.components.appStore,
                 readerMenuController = readerMenuController,
+            ),
+            owner = this,
+            view = view,
+        )
+
+        listenIntegration.set(
+            feature = org.mozilla.fenix.browser.readermode.listen.ListenIntegration(
+                context = context,
+                browserStore = store,
+                binding = binding,
+                settings = context.components.settings,
+                fragmentManager = parentFragmentManager,
+                controller = context.components.listen.controller,
+                customTabSessionId = customTabSessionId,
             ),
             owner = this,
             view = view,

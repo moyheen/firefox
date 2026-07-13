@@ -24,6 +24,7 @@ import androidx.navigation.findNavController
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import androidx.preference.EditTextPreference
+import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreferenceCompat
@@ -475,6 +476,15 @@ class SecretSettingsFragment : PreferenceFragmentCompat(), SystemInsetsPaddedFra
             isVisible = !hasWorldCupEnded()
             isChecked = settings.enableHomepageSportsWidget
             onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<ListPreference>(R.string.pref_key_reader_listen_variant).apply {
+            isVisible = true
+            value = context.components.settings.readerListenVariant
+            onPreferenceChangeListener = Preference.OnPreferenceChangeListener { _, newValue ->
+                (newValue as? String)?.let { context.components.settings.readerListenVariant = it }
+                true
+            }
         }
     }
 

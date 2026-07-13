@@ -111,6 +111,24 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content" />
 
+            <ViewStub
+                android:id="@+id/listenBannerStub"
+                android:inflatedId="@+id/listenBanner"
+                android:layout="@layout/listen_banner_stub"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top"
+                android:layout_marginTop="88dp"
+                android:elevation="8dp" />
+
+            <ViewStub
+                android:id="@+id/listenToolbarStub"
+                android:inflatedId="@+id/listenToolbar"
+                android:layout="@layout/listen_banner_stub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|center_horizontal" />
+
         </androidx.coordinatorlayout.widget.CoordinatorLayout>
 
     </androidx.constraintlayout.widget.ConstraintLayout>

@@ -4253,4 +4253,31 @@
     <string name="firefox_labs_feature_conflict">Feature isn’t available to try.</string>
     <!-- Text displayed on the Firefox Labs screen when there are no Labs experimental features present. -->
     <string name="firefox_labs_no_labs_available_description">No experimental features to try right now</string>
+    <!-- Reader Mode Listen prototype: strings used by the Listen-in-Reader-Mode feature. -->
+    <string name="reader_listen_label">Listen</string>
+    <string name="reader_listen_banner_title">Listen to this article</string>
+    <string name="reader_listen_banner_subtitle">Hands-free audio</string>
+    <string name="reader_listen_play_content_description">Play</string>
+    <string name="reader_listen_pause_content_description">Pause</string>
+    <string name="reader_listen_skip_back_content_description">Skip back</string>
+    <string name="reader_listen_skip_forward_content_description">Skip forward</string>
+    <string name="reader_listen_close_content_description">Close Listen controls</string>
+    <string name="reader_listen_sheet_title">Listen</string>
+    <string name="reader_listen_speed_label">Speed</string>
+    <string name="reader_listen_voice_label">Voice</string>
+    <string name="reader_listen_speed_075x">0.75x</string>
+    <string name="reader_listen_speed_1x">1x</string>
+    <string name="reader_listen_speed_125x">1.25x</string>
+    <string name="reader_listen_speed_15x">1.5x</string>
+    <string name="reader_listen_demo_note">Prototype: speaks a sample article. Production version would read the parsed article text.</string>
+
+    <!-- Reader Mode Listen prototype: secret debug settings for switching placement variants. -->
+    <string name="secret_settings_category_reader_listen_title" tools:ignore="UnusedResources">Reader Mode Listen prototype</string>
+    <string name="preferences_debug_settings_reader_listen_variant" tools:ignore="UnusedResources">Listen button placement</string>
+    <string name="reader_listen_variant_off" tools:ignore="UnusedResources">Off</string>
+    <string name="reader_listen_variant_toolbar" tools:ignore="UnusedResources">Toolbar icon</string>
+    <string name="reader_listen_variant_banner" tools:ignore="UnusedResources">Top banner</string>
+    <string name="reader_listen_variant_value_off" translatable="false">off</string>
+    <string name="reader_listen_variant_value_toolbar" translatable="false">toolbar</string>
+    <string name="reader_listen_variant_value_banner" translatable="false">banner</string>
 </resources>

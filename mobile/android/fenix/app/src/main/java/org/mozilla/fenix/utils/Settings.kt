@@ -2749,6 +2749,15 @@ class Settings(
         default = { FxNimbus.features.shakeToSummarize.value().enabled },
     )
 
+    /**
+     * Prototype: selected placement variant for the Reader Mode Listen button.
+     * One of "off", "toolbar", "banner" (see [org.mozilla.fenix.browser.readermode.listen.ListenVariant]).
+     */
+    var readerListenVariant by stringPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_reader_listen_variant),
+        default = "off",
+    )
+
     var aiControlsFeatureFlagEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_ai_controls),
         default = true,
