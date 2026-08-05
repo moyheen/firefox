@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import mozilla.components.support.base.log.logger.Logger
 import org.mozilla.fenix.R
+import org.mozilla.fenix.utils.Settings
 import java.util.Locale
 import kotlin.math.absoluteValue
 
@@ -26,7 +27,9 @@ import kotlin.math.absoluteValue
  * @property totalSentences total number of sentences queued for the current article.
  * @property speed playback speed multiplier (1.0 = normal).
  * @property selectedVoiceName name of the currently selected voice, or null if default.
- * @property availableVoices voices available on this device.
+ * @property availableVoices on-device voices available on this device.
+ * @property noOnDeviceVoice true when no voice could be confirmed to synthesize without a network
+ * connection, meaning playback is unavailable.
  */
 data class ListenState(
     val isReady: Boolean = false,
@@ -36,16 +39,29 @@ data class ListenState(
     val speed: Float = 1.0f,
     val selectedVoiceName: String? = null,
     val availableVoices: List<Voice> = emptyList(),
+    val noOnDeviceVoice: Boolean = false,
 )
 
 /**
  * Wraps Android's [TextToSpeech] with play/pause, skip-by-sentence, speed, and voice controls.
+ *
+ * Synthesis is restricted to on-device voices so that article text is never knowingly sent to a
+ * cloud TTS backend. Voice selection is the only mechanism the platform offers for this, so the
+ * restriction rests on never letting a [Voice] that reports requiring a network connection reach
+ * the engine — see [isOnDevice] and its callers. When no on-device voice can be confirmed,
+ * playback is refused rather than attempted.
+ *
+ * Note where that stops being a guarantee: whether a voice is local is self-reported by the TTS
+ * engine, which runs in its own process. Nothing here can observe the engine's actual network use,
+ * so an engine that misreports a voice cannot be detected from this side. Confirming a given
+ * engine really stays local requires testing it with the device offline.
  *
  * Prototype-only. The article text passed to [play] is chosen by [ListenIntegration]; in this
  * prototype it is a bundled demo article rather than the page's actual text.
  */
 class ListenController(
     private val context: Context,
+    private val settings: Settings,
 ) {
     private val logger = Logger("ListenController")
 
@@ -59,15 +75,43 @@ class ListenController(
         tts = TextToSpeech(context.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.let { engine ->
+                    // Setting the language can itself make the engine select a voice for that
+                    // locale, so this must stay above the on-device check below: reordering the
+                    // two would check a voice the engine is about to replace.
                     engine.language = Locale.getDefault()
                     engine.setOnUtteranceProgressListener(progressListener)
-                    val voices = engine.voices?.toList().orEmpty()
-                        .filter { !it.isNetworkConnectionRequired }
+
+                    val onDeviceVoices = engine.voices?.toList().orEmpty()
+                        .filter(::isOnDevice)
                         .sortedBy { it.name }
+
+                    // A voice the user picked in a previous session wins over the engine's default.
+                    // It is looked up in the filtered list rather than trusted by name, so a voice
+                    // whose data was uninstalled, or one saved under a different engine, simply
+                    // fails to resolve and falls through to the choices below.
+                    val savedVoice = settings.readerListenVoice
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { saved -> onDeviceVoices.firstOrNull { it.name == saved } }
+
+                    // The engine's default voice may well be a cloud voice, so only keep it if it
+                    // synthesizes locally; otherwise fall back to an on-device voice, preferring
+                    // one that speaks the current language. This reads getVoice() rather than
+                    // getDefaultVoice(), since the latter describes the engine's default language
+                    // instead of the language set above, which is what will actually be spoken.
+                    val language = Locale.getDefault().language
+                    val voice = savedVoice
+                        ?: engine.voice?.takeIf(::isOnDevice)
+                        ?: onDeviceVoices.firstOrNull { it.locale.language == language }
+                        ?: onDeviceVoices.firstOrNull()
+                    voice?.let { engine.voice = it }
+
+                    // No verified on-device voice means we cannot promise the text stays local, so
+                    // the feature reports itself unavailable rather than risking a cloud backend.
                     _state.value = _state.value.copy(
                         isReady = true,
-                        availableVoices = voices,
-                        selectedVoiceName = engine.voice?.name,
+                        availableVoices = onDeviceVoices,
+                        selectedVoiceName = voice?.name,
+                        noOnDeviceVoice = voice == null,
                     )
                 }
             } else {
@@ -100,7 +144,7 @@ class ListenController(
      * can be paused, resumed, and skipped sentence-by-sentence.
      */
     fun play(text: String) {
-        if (tts == null) return
+        if (tts == null || _state.value.noOnDeviceVoice) return
         sentences = splitSentences(text)
         if (sentences.isEmpty()) return
         _state.value = _state.value.copy(
@@ -152,7 +196,12 @@ class ListenController(
     }
 
     fun setVoice(voice: Voice) {
+        if (!isOnDevice(voice)) {
+            logger.warn("Refusing cloud voice ${voice.name}; on-device synthesis only")
+            return
+        }
         tts?.voice = voice
+        settings.readerListenVoice = voice.name
         _state.value = _state.value.copy(selectedVoiceName = voice.name)
         if (_state.value.isPlaying) {
             queueFrom(_state.value.currentIndex)
@@ -173,6 +222,16 @@ class ListenController(
 
     private fun queueFrom(startIndex: Int) {
         val engine = tts ?: return
+
+        // Re-check rather than trusting the choice made at init: voice data can be installed or
+        // removed while the app runs, and the engine may substitute a voice on its own.
+        val voice = engine.voice
+        if (voice != null && !isOnDevice(voice)) {
+            logger.warn("Engine switched to cloud voice ${voice.name}; refusing to speak")
+            _state.value = _state.value.copy(isPlaying = false, noOnDeviceVoice = true)
+            return
+        }
+
         sentences.subList(startIndex, sentences.size).forEachIndexed { offset, sentence ->
             val absoluteIndex = startIndex + offset
             engine.speak(
@@ -193,6 +252,15 @@ class ListenController(
 
     companion object {
         private val SENTENCE_DELIMITER = Regex("(?<=[.!?])\\s+")
+
+        /**
+         * A voice is usable only if it synthesizes on-device: it must not require a network
+         * connection, and it must already be installed (an uninstalled voice would need a
+         * download before it could speak).
+         */
+        private fun isOnDevice(voice: Voice): Boolean =
+            !voice.isNetworkConnectionRequired &&
+                !voice.features.orEmpty().contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)
 
         @RawRes
         private val demoArticles = listOf(

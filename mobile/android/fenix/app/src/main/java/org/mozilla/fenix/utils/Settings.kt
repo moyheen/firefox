@@ -2758,6 +2758,17 @@ class Settings(
         default = "off",
     )
 
+    /**
+     * Prototype: [android.speech.tts.Voice.getName] of the voice last chosen for Reader Mode
+     * Listen, or empty if the user has not chosen one. Voice names are specific to the
+     * text-to-speech engine that produced them, so a stored name may not resolve on another
+     * device or after the default engine changes; callers must re-validate it.
+     */
+    var readerListenVoice by stringPreference(
+        key = appContext.getPreferenceKey(R.string.pref_key_reader_listen_voice),
+        default = "",
+    )
+
     var aiControlsFeatureFlagEnabled by booleanPreference(
         key = appContext.getPreferenceKey(R.string.pref_key_enable_ai_controls),
         default = true,

@@ -168,6 +168,7 @@ private fun ListenSheetContent(
             VoicePicker(
                 selectedName = state.selectedVoiceName,
                 voices = state.availableVoices,
+                noOnDeviceVoice = state.noOnDeviceVoice,
                 onSelect = controller::setVoice,
             )
 
@@ -277,14 +278,11 @@ private fun SpeedChips(
 private fun VoicePicker(
     selectedName: String?,
     voices: List<Voice>,
+    noOnDeviceVoice: Boolean,
     onSelect: (Voice) -> Unit,
 ) {
     if (voices.isEmpty()) {
-        Text(
-            text = "No voices available",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = FirefoxTheme.typography.body2,
-        )
+        NoVoicesMessage(noOnDeviceVoice = noOnDeviceVoice)
         return
     }
     var expanded by remember { mutableStateOf(false) }
@@ -320,4 +318,18 @@ private fun VoicePicker(
             )
         }
     }
+}
+
+@Composable
+private fun NoVoicesMessage(noOnDeviceVoice: Boolean) {
+    val text = if (noOnDeviceVoice) {
+        stringResource(R.string.reader_listen_no_on_device_voice)
+    } else {
+        "No voices available"
+    }
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = FirefoxTheme.typography.body2,
+    )
 }

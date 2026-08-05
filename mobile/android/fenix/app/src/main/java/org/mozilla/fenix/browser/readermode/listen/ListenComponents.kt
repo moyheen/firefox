@@ -5,6 +5,7 @@
 package org.mozilla.fenix.browser.readermode.listen
 
 import android.content.Context
+import org.mozilla.fenix.ext.components
 
 /**
  * Application-scoped holder for the Reader Mode Listen prototype components.
@@ -12,5 +13,7 @@ import android.content.Context
  * [ListenController] instance is shared across all variant entry points.
  */
 class ListenComponents(context: Context) {
-    val controller: ListenController by lazy { ListenController(context) }
+    val controller: ListenController by lazy {
+        ListenController(context, context.components.settings)
+    }
 }

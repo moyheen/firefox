@@ -4270,6 +4270,8 @@
     <string name="reader_listen_speed_125x">1.25x</string>
     <string name="reader_listen_speed_15x">1.5x</string>
     <string name="reader_listen_demo_note">Prototype: speaks a sample article. Production version would read the parsed article text.</string>
+    <!-- Shown in place of the voice list when the device has no offline text-to-speech voice installed. Listen only uses on-device voices so that article text is never sent to a cloud service. -->
+    <string name="reader_listen_no_on_device_voice">No offline voice installed. Listen only uses on-device voices, so text is never sent to a server. Install a voice in your device’s text-to-speech settings.</string>
 
     <!-- Reader Mode Listen prototype: secret debug settings for switching placement variants. -->
     <string name="secret_settings_category_reader_listen_title" tools:ignore="UnusedResources">Reader Mode Listen prototype</string>
