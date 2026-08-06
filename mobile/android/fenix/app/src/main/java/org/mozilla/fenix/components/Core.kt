@@ -270,6 +270,7 @@ class Core(
             runtime = geckoRuntime,
         ).also {
             WebCompatFeature.install(it)
+            TtsSpikeFeature.install(it)
         }
     }
 

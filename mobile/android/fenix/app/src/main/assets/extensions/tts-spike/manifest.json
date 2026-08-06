@@ -1,0 +1,17 @@
+{
+  "manifest_version": 2,
+  "name": "TTS Spike",
+  "version": "1.0.2",
+  "description": "Spike: Firefox AI Runtime text-to-speech (browser.trial.ml) + Web Audio playback, on device.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tts-spike@mozilla.org"
+    }
+  },
+  "permissions": ["activeTab"],
+  "optional_permissions": ["trialML"],
+  "browser_action": {
+    "default_title": "TTS Spike",
+    "default_popup": "popup.html"
+  }
+}

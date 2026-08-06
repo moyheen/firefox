@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font:
+          14px system-ui,
+          sans-serif;
+        width: 320px;
+        margin: 0;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0 0 8px;
+      }
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        height: 72px;
+        font: inherit;
+      }
+      .row {
+        display: flex;
+        gap: 6px;
+        margin: 8px 0;
+      }
+      button {
+        flex: 1;
+        padding: 10px;
+        font: inherit;
+      }
+      #log {
+        background: #f0f0f4;
+        padding: 6px;
+        height: 130px;
+        overflow: auto;
+        white-space: pre-wrap;
+        font-family: monospace;
+        font-size: 11px;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>TTS Spike</h1>
+    <textarea id="text">
+Firefox can read this page aloud. The audio is generated on your device and never leaves it.</textarea
+    >
+    <div class="row">
+      <button id="use-page">Use current page</button>
+    </div>
+    <div class="row">
+      <button id="speak">Speak</button>
+      <button id="stop">Stop</button>
+    </div>
+    <pre id="log"></pre>
+    <script src="popup.js"></script>
+  </body>
+</html>

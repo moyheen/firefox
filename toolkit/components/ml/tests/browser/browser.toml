@@ -81,6 +81,10 @@ support-files = [
 
 ["browser_ml_thompson_sample.js"]
 
+# Spike: proves the Option B "Listen to page" pipeline (ML runtime TTS -> Web
+# Audio playback). No-op unless MOZ_TTS_SPIKE=1 is set (it hits the real hub).
+["browser_ml_tts_playback_spike.js"]
+
 ["browser_ml_utf8_codepoint.js"]
 skip-if = [
   "arch == 'x86'",
