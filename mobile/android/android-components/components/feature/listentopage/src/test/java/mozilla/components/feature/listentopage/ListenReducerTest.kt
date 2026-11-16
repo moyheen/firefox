@@ -50,7 +50,7 @@ class ListenReducerTest {
 
     @Test
     fun `test that a listen request starts a session on the given tab`() {
-        val state = listenReducer(ListenState(), ListenAction.Session.ListenRequested(TAB_ID, URL))
+        val state = listenReducer(ListenState(), ListenAction.User.Session.ListenRequested(TAB_ID, URL))
 
         assertEquals(TAB_ID, state.tabId)
     }
@@ -59,13 +59,13 @@ class ListenReducerTest {
     fun `test that a listen request drops everything the previous session held`() {
         assertEquals(
             ListenState(tabId = "tab-2", url = URL),
-            listenReducer(fullState, ListenAction.Session.ListenRequested("tab-2", URL)),
+            listenReducer(fullState, ListenAction.User.Session.ListenRequested("tab-2", URL)),
         )
     }
 
     @Test
     fun `test that a listen request records the article url`() {
-        val state = listenReducer(ListenState(), ListenAction.Session.ListenRequested(TAB_ID, URL))
+        val state = listenReducer(ListenState(), ListenAction.User.Session.ListenRequested(TAB_ID, URL))
 
         assertEquals(URL, state.url)
     }
@@ -74,13 +74,13 @@ class ListenReducerTest {
     fun `test that stopping resets appropriate fields`() {
         assertEquals(
             ListenState(voiceState = fullState.voiceState.copy()),
-            listenReducer(fullState, ListenAction.Session.StopRequested()),
+            listenReducer(fullState, ListenAction.User.Session.StopRequested()),
         )
     }
 
     @Test
     fun `test that dismissing an error clears it and leaves the session alone`() {
-        val state = listenReducer(fullState, ListenAction.ErrorDismissed)
+        val state = listenReducer(fullState, ListenAction.User.ErrorDismissed)
 
         assertNull(state.error)
         assertEquals(fullState.copy(error = null), state)
@@ -97,7 +97,7 @@ class ListenReducerTest {
             )
 
         errors.forEach { error ->
-            val state = listenReducer(fullState.copy(error = error), ListenAction.ErrorDismissed)
+            val state = listenReducer(fullState.copy(error = error), ListenAction.User.ErrorDismissed)
 
             assertNull("$error was not cleared", state.error)
         }
@@ -105,8 +105,8 @@ class ListenReducerTest {
 
     @Test
     fun `test that changing the mode records it`() {
-        val collapsed = listenReducer(ListenState(), ListenAction.ModeChanged(PlayerMode.Compact))
-        val expanded = listenReducer(collapsed, ListenAction.ModeChanged(PlayerMode.Expanded))
+        val collapsed = listenReducer(ListenState(), ListenAction.User.ModeChanged(PlayerMode.Compact))
+        val expanded = listenReducer(collapsed, ListenAction.User.ModeChanged(PlayerMode.Expanded))
 
         assertEquals(ListenState(mode = PlayerMode.Compact), collapsed)
         assertEquals(ListenState(), expanded)
@@ -116,7 +116,7 @@ class ListenReducerTest {
     fun `test that dismissing when there is no error changes nothing`() {
         val noError = fullState.copy(error = null)
 
-        assertEquals(noError, listenReducer(noError, ListenAction.ErrorDismissed))
+        assertEquals(noError, listenReducer(noError, ListenAction.User.ErrorDismissed))
     }
 
     @Test
@@ -124,7 +124,7 @@ class ListenReducerTest {
         val state =
             listenReducer(
                 ListenState(),
-                ListenAction.Voices.VoiceSelected(Voice(id = "en-us-female", locale = Locale.US)),
+                ListenAction.User.Voices.VoiceSelected(Voice(id = "en-us-female", locale = Locale.US)),
             )
 
         assertEquals(Voice(id = "en-us-female", locale = Locale.US), state.voiceState.selectedVoice)
@@ -132,7 +132,7 @@ class ListenReducerTest {
 
     @Test
     fun `test that a picked playback speed is recorded`() {
-        val state = listenReducer(ListenState(), ListenAction.Controls.PlaybackSpeedSelected(PlaybackSpeed.X0_5))
+        val state = listenReducer(ListenState(), ListenAction.User.Controls.PlaybackSpeedSelected(PlaybackSpeed.X0_5))
 
         assertEquals(PlaybackSpeed.X0_5, state.playbackState.speed)
     }
@@ -142,7 +142,8 @@ class ListenReducerTest {
         val voices =
             listOf(Voice(id = "en-us-female", locale = Locale.US), Voice(id = "en-us-male", locale = Locale.US))
 
-        val state = listenReducer(ListenState(), ListenAction.Voices.AvailableVoicesLoaded(voices, voices.first()))
+        val state =
+            listenReducer(ListenState(), ListenAction.System.Voices.AvailableVoicesLoaded(voices, voices.first()))
 
         assertEquals(voices, state.voiceState.availableVoices)
     }
@@ -150,10 +151,11 @@ class ListenReducerTest {
     @Test
     fun `test that loading voices again replaces the voices of the previous language`() {
         val german = listOf(Voice("de-de", Locale.GERMANY))
-        val loaded = listenReducer(ListenState(), ListenAction.Voices.AvailableVoicesLoaded(german, german.first()))
+        val loaded =
+            listenReducer(ListenState(), ListenAction.System.Voices.AvailableVoicesLoaded(german, german.first()))
 
         val english = listOf(Voice("en-us", Locale.US))
-        val state = listenReducer(loaded, ListenAction.Voices.AvailableVoicesLoaded(english, english.first()))
+        val state = listenReducer(loaded, ListenAction.System.Voices.AvailableVoicesLoaded(english, english.first()))
 
         assertEquals(english, state.voiceState.availableVoices)
     }
@@ -166,7 +168,7 @@ class ListenReducerTest {
         val state =
             listenReducer(
                 fullState,
-                ListenAction.Voices.AvailableVoicesLoaded(
+                ListenAction.System.Voices.AvailableVoicesLoaded(
                     voices,
                     selectedVoice = Voice(id = "en-us-male", locale = Locale.US),
                 ),
@@ -178,14 +180,14 @@ class ListenReducerTest {
 
     @Test
     fun `test that having no offline voice is reported as an error`() {
-        val state = listenReducer(ListenState(), ListenAction.Voices.NoOfflineVoicesAvailable)
+        val state = listenReducer(ListenState(), ListenAction.System.Voices.NoOfflineVoicesAvailable)
 
         assertEquals(ListenError.NoOfflineVoice, state.error)
     }
 
     @Test
     fun `test that having no offline voice leaves the article alone`() {
-        val state = listenReducer(fullState.copy(error = null), ListenAction.Voices.NoOfflineVoicesAvailable)
+        val state = listenReducer(fullState.copy(error = null), ListenAction.System.Voices.NoOfflineVoicesAvailable)
 
         assertEquals(
             fullState.copy(
@@ -200,7 +202,7 @@ class ListenReducerTest {
     // left behind for the popup to offer.
     @Test
     fun `test that having no offline voice empties the voices and marks them loaded`() {
-        val state = listenReducer(fullState, ListenAction.Voices.NoOfflineVoicesAvailable)
+        val state = listenReducer(fullState, ListenAction.System.Voices.NoOfflineVoicesAvailable)
 
         assertEquals(emptyList<Voice>(), state.voiceState.availableVoices)
         assertNull(state.voiceState.selectedVoice)
@@ -211,7 +213,8 @@ class ListenReducerTest {
     fun `test that loaded voices are marked as loaded`() {
         val voices = listOf(Voice(id = "en-us-female", locale = Locale.US))
 
-        val state = listenReducer(ListenState(), ListenAction.Voices.AvailableVoicesLoaded(voices, voices.first()))
+        val state =
+            listenReducer(ListenState(), ListenAction.System.Voices.AvailableVoicesLoaded(voices, voices.first()))
 
         assertEquals(VoiceLoadState.Loaded, state.voiceState.loadState)
     }
@@ -227,7 +230,7 @@ class ListenReducerTest {
 
     @Test
     fun `test that a failed synthesis becomes an error the session can show`() {
-        val state = listenReducer(ListenState(tabId = "tab-1"), ListenAction.Synthesis.SynthesisFailed)
+        val state = listenReducer(ListenState(tabId = "tab-1"), ListenAction.System.Synthesis.SynthesisFailed)
 
         assertEquals(ListenError.SynthesisFailed, state.error)
         assertEquals("tab-1", state.tabId)
@@ -235,9 +238,9 @@ class ListenReducerTest {
 
     @Test
     fun `test that a failed synthesis can be dismissed`() {
-        val failed = listenReducer(ListenState(tabId = "tab-1"), ListenAction.Synthesis.SynthesisFailed)
+        val failed = listenReducer(ListenState(tabId = "tab-1"), ListenAction.System.Synthesis.SynthesisFailed)
 
-        val dismissed = listenReducer(failed, ListenAction.ErrorDismissed)
+        val dismissed = listenReducer(failed, ListenAction.User.ErrorDismissed)
 
         assertNull(dismissed.error)
     }
@@ -259,7 +262,7 @@ class ListenReducerTest {
         val state =
             listenReducer(
                 fullState,
-                ListenAction.Content.ContentReady(
+                ListenAction.System.Content.ContentReady(
                     languageTag = "de-DE",
                     title = fullState.title,
                     site = fullState.site,
@@ -274,7 +277,11 @@ class ListenReducerTest {
         val state =
             listenReducer(
                 ListenState(tabId = TAB_ID, url = URL),
-                ListenAction.Content.ContentReady(languageTag = "en-US", title = "An article", site = "example.org"),
+                ListenAction.System.Content.ContentReady(
+                    languageTag = "en-US",
+                    title = "An article",
+                    site = "example.org",
+                ),
             )
 
         assertEquals("An article", state.title)
@@ -284,7 +291,10 @@ class ListenReducerTest {
     @Test
     fun `test that a ready article with no title records none`() {
         val state =
-            listenReducer(fullState, ListenAction.Content.ContentReady(languageTag = "de-DE", site = "example.org"))
+            listenReducer(
+                fullState,
+                ListenAction.System.Content.ContentReady(languageTag = "de-DE", site = "example.org"),
+            )
 
         assertNull(state.title)
         assertEquals("example.org", state.site)
@@ -292,7 +302,7 @@ class ListenReducerTest {
 
     @Test
     fun `test that an article in another language drops the voices of the previous one`() {
-        val state = listenReducer(fullState, ListenAction.Content.ContentReady(languageTag = "fr-FR"))
+        val state = listenReducer(fullState, ListenAction.System.Content.ContentReady(languageTag = "fr-FR"))
 
         assertEquals("fr-FR", state.languageTag)
         assertEquals(VoiceState(), state.voiceState)
@@ -321,7 +331,7 @@ class ListenReducerTest {
     fun `test that what the player reports is recorded`() {
         val reported = PlaybackState(phase = PlaybackPhase.Playing, chunk = ChunkState(index = 2), positionMs = 4_000)
 
-        val state = listenReducer(ListenState(), ListenAction.Playback.StateChangeObserved(reported))
+        val state = listenReducer(ListenState(), ListenAction.System.Playback.StateChangeObserved(reported))
 
         assertEquals(reported, state.playbackState)
     }
@@ -330,14 +340,14 @@ class ListenReducerTest {
     fun `test that what the player reports leaves the rest of the session alone`() {
         val reported = PlaybackState(phase = PlaybackPhase.Paused, positionMs = 1_000)
 
-        val state = listenReducer(fullState, ListenAction.Playback.StateChangeObserved(reported))
+        val state = listenReducer(fullState, ListenAction.System.Playback.StateChangeObserved(reported))
 
         assertEquals(fullState.copy(playbackState = reported), state)
     }
 
     @Test
     fun `test that how far through the article playback has got is recorded`() {
-        val state = listenReducer(ListenState(), ListenAction.Playback.ArticleProgressReverted(30_000, 600_000))
+        val state = listenReducer(ListenState(), ListenAction.System.Playback.ArticleProgressReverted(30_000, 600_000))
 
         assertEquals(ArticleProgress(positionMs = 30_000, durationMs = 600_000), state.articleProgress)
         assertEquals(0.05f, state.articleProgress.fraction, 0.0001f)
@@ -347,21 +357,21 @@ class ListenReducerTest {
     // would hold the bar at full while there is still audio to play.
     @Test
     fun `test that a position outside a shortened article is pulled back inside it`() {
-        val state = listenReducer(fullState, ListenAction.Playback.ArticleProgressReverted(90_000, 60_000))
+        val state = listenReducer(fullState, ListenAction.System.Playback.ArticleProgressReverted(90_000, 60_000))
 
         assertEquals(ArticleProgress(positionMs = 60_000, durationMs = 60_000), state.articleProgress)
     }
 
     @Test
     fun `test that article progress leaves the rest of the session alone`() {
-        val state = listenReducer(fullState, ListenAction.Playback.ArticleProgressReverted(1_000, 2_000))
+        val state = listenReducer(fullState, ListenAction.System.Playback.ArticleProgressReverted(1_000, 2_000))
 
         assertEquals(fullState.copy(articleProgress = ArticleProgress(1_000, 2_000)), state)
     }
 
     @Test
     fun `test that an article of no length reads as no progress rather than as not a number`() {
-        val state = listenReducer(fullState, ListenAction.Playback.ArticleProgressReverted(0, 0))
+        val state = listenReducer(fullState, ListenAction.System.Playback.ArticleProgressReverted(0, 0))
 
         assertEquals(ArticleProgress(), state.articleProgress)
         assertEquals(0f, state.articleProgress.fraction, 0f)
@@ -369,7 +379,7 @@ class ListenReducerTest {
 
     @Test
     fun `test that a seek moves the elapsed time to that share of the article`() {
-        val state = listenReducer(fullState, ListenAction.Playback.SeekRequested(0.25f))
+        val state = listenReducer(fullState, ListenAction.User.Controls.SeekRequested(0.25f))
 
         assertEquals(
             fullState.copy(articleProgress = fullState.articleProgress.copy(positionMs = 150_000, barPosition = 0.25f)),
@@ -385,7 +395,7 @@ class ListenReducerTest {
                 articleProgress = ArticleProgress(positionMs = 100_000, durationMs = 600_000, barPosition = 1 / 3f)
             )
 
-        val state = listenReducer(held, ListenAction.Playback.SeekRequested(0.5f))
+        val state = listenReducer(held, ListenAction.User.Controls.SeekRequested(0.5f))
 
         assertEquals(300_000, state.articleProgress.positionMs)
         assertEquals(0.5f, state.articleProgress.fraction, 0f)
@@ -399,7 +409,7 @@ class ListenReducerTest {
                 articleProgress = ArticleProgress(positionMs = 100_000, durationMs = 600_000, barPosition = 1 / 3f)
             )
 
-        val state = listenReducer(held, ListenAction.Playback.SeekRequested(1f))
+        val state = listenReducer(held, ListenAction.User.Controls.SeekRequested(1f))
 
         assertEquals("the end of the drawn length was taken as the end", 600_000, state.articleProgress.positionMs)
     }
@@ -408,14 +418,17 @@ class ListenReducerTest {
     fun `test that a seek past either end of the article stops at that end`() {
         assertEquals(
             600_000,
-            listenReducer(fullState, ListenAction.Playback.SeekRequested(1.5f)).articleProgress.positionMs,
+            listenReducer(fullState, ListenAction.User.Controls.SeekRequested(1.5f)).articleProgress.positionMs,
         )
-        assertEquals(0, listenReducer(fullState, ListenAction.Playback.SeekRequested(-0.5f)).articleProgress.positionMs)
+        assertEquals(
+            0,
+            listenReducer(fullState, ListenAction.User.Controls.SeekRequested(-0.5f)).articleProgress.positionMs,
+        )
     }
 
     @Test
     fun `test that a seek in an article of no length stays at the start`() {
-        val state = listenReducer(ListenState(), ListenAction.Playback.SeekRequested(0.5f))
+        val state = listenReducer(ListenState(), ListenAction.User.Controls.SeekRequested(0.5f))
 
         assertEquals(ArticleProgress(), state.articleProgress)
     }
@@ -424,7 +437,7 @@ class ListenReducerTest {
     fun `test that the end of the article fills the bar`() {
         val playing = fullState.copy(articleProgress = ArticleProgress(positionMs = 590_000, durationMs = 600_000))
 
-        val state = listenReducer(playing, ListenAction.Playback.PlaybackEnded)
+        val state = listenReducer(playing, ListenAction.System.Playback.PlaybackEnded)
 
         assertEquals(PlaybackPhase.Ended, state.playbackState.phase)
         assertEquals(600_000, state.articleProgress.positionMs)
@@ -440,7 +453,7 @@ class ListenReducerTest {
             )
 
         val seeking = listenReducer(finished, PlaylistAction.SeekStarted(articlePositionMs = 300_000, chunkIndex = 2))
-        val waiting = listenReducer(seeking, ListenAction.Playback.PlaybackWaiting)
+        val waiting = listenReducer(seeking, ListenAction.System.Playback.PlaybackWaiting)
 
         assertEquals(PlaybackPhase.Paused, seeking.playbackState.phase)
         assertEquals(PlaybackPhase.Paused, waiting.playbackState.phase)
@@ -457,7 +470,7 @@ class ListenReducerTest {
 
     @Test
     fun `test that a failed player is reported as an error`() {
-        val state = listenReducer(ListenState(), ListenAction.Playback.PlaybackFailed)
+        val state = listenReducer(ListenState(), ListenAction.System.Playback.PlaybackFailed)
 
         assertEquals(ListenError.PlaybackFailed, state.error)
         assertEquals(PlaybackPhase.Failed, state.playbackState.phase)
@@ -467,7 +480,8 @@ class ListenReducerTest {
     fun `test that the chunk the player has reached is recorded`() {
         val chunk = ChunkState(index = 4, durationMs = 60_000)
 
-        val state = listenReducer(ListenState(), ListenAction.Playback.PlaybackStarted(chunk, positionMs = 1_000))
+        val state =
+            listenReducer(ListenState(), ListenAction.System.Playback.PlaybackStarted(chunk, positionMs = 1_000))
 
         assertEquals(chunk, state.playbackState.chunk)
         assertEquals(1_000, state.playbackState.positionMs)
@@ -478,7 +492,7 @@ class ListenReducerTest {
     fun `test that waiting on the next chunk is recorded as a wait rather than an end`() {
         val playing = fullState.copy(playbackState = fullState.playbackState.copy(phase = PlaybackPhase.Playing))
 
-        val state = listenReducer(playing, ListenAction.Playback.PlaybackWaiting)
+        val state = listenReducer(playing, ListenAction.System.Playback.PlaybackWaiting)
 
         assertEquals(PlaybackPhase.Buffering, state.playbackState.phase)
         assertEquals(playing.playbackState.chunk, state.playbackState.chunk)
@@ -488,7 +502,7 @@ class ListenReducerTest {
     fun `test that a paused player stays paused while it waits`() {
         val paused = fullState.copy(playbackState = fullState.playbackState.copy(phase = PlaybackPhase.Paused))
 
-        val state = listenReducer(paused, ListenAction.Playback.PlaybackWaiting)
+        val state = listenReducer(paused, ListenAction.System.Playback.PlaybackWaiting)
 
         assertEquals(PlaybackPhase.Paused, state.playbackState.phase)
     }
@@ -497,7 +511,7 @@ class ListenReducerTest {
     fun `test that the article being read out is recorded as ended`() {
         val readOut = fullState.copy(error = null)
 
-        val state = listenReducer(readOut, ListenAction.Playback.PlaybackEnded)
+        val state = listenReducer(readOut, ListenAction.System.Playback.PlaybackEnded)
 
         assertEquals(PlaybackPhase.Ended, state.playbackState.phase)
         assertNull(state.error)
@@ -505,9 +519,9 @@ class ListenReducerTest {
 
     @Test
     fun `test that a failed player can be dismissed`() {
-        val failed = listenReducer(ListenState(), ListenAction.Playback.PlaybackFailed)
+        val failed = listenReducer(ListenState(), ListenAction.System.Playback.PlaybackFailed)
 
-        assertNull(listenReducer(failed, ListenAction.ErrorDismissed).error)
+        assertNull(listenReducer(failed, ListenAction.User.ErrorDismissed).error)
     }
 
     // An error the user has not seen yet outlives a report that has nothing to say about it, so that a phase change
@@ -517,7 +531,7 @@ class ListenReducerTest {
         val state =
             listenReducer(
                 fullState.copy(error = ListenError.SynthesisFailed),
-                ListenAction.Playback.StateChangeObserved(PlaybackState(phase = PlaybackPhase.Paused)),
+                ListenAction.System.Playback.StateChangeObserved(PlaybackState(phase = PlaybackPhase.Paused)),
             )
 
         assertEquals(ListenError.SynthesisFailed, state.error)
