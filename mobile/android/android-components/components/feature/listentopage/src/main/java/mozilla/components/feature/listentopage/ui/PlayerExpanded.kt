@@ -46,7 +46,6 @@ import mozilla.components.feature.listentopage.ListenAction
 import mozilla.components.feature.listentopage.R
 import mozilla.components.feature.listentopage.VoiceState
 import mozilla.components.feature.listentopage.playback.PlaybackSpeed
-import mozilla.components.feature.listentopage.playback.shownDurationMs
 import mozilla.components.feature.listentopage.progress.ArticleProgress
 import mozilla.components.ui.icons.R as iconsR
 
@@ -136,7 +135,7 @@ private fun AudioProgress(
     val spokenTotalTime by
         remember(locale) {
             derivedStateOf {
-                formatSpokenDuration(articleProgressState.value.shownDurationMs() / MS_PER_SECOND, locale)
+                formatSpokenDuration(articleProgressState.value.shownDuration.inWholeSeconds, locale)
             }
         }
     val seekState = stringResource(R.string.mozac_feature_listentopage_seek_state, spokenElapsedTime, spokenTotalTime)

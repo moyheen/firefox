@@ -34,6 +34,7 @@ import mozilla.components.feature.listentopage.PlaybackState
 import mozilla.components.feature.listentopage.listenReducer
 import mozilla.components.feature.listentopage.progress.ArticleProgress
 import org.mozilla.fenix.components.listentopage.ListenDebugController
+import org.mozilla.fenix.listentopage.listenUrl
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private const val MILLIS_PER_SECOND = 1000
@@ -99,7 +100,7 @@ private fun ListenToPageToolsContent(
                 FilledButton(text = "Listen") {
                     browserStore.state.selectedTab?.let {
                         listenStore.dispatch(
-                            ListenAction.User.Session.ListenRequested(tabId = it.id, url = it.content.url)
+                            ListenAction.User.Session.ListenRequested(tabId = it.id, url = it.listenUrl)
                         )
                     }
                 }

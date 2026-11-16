@@ -11,6 +11,7 @@ import androidx.media3.session.MediaController
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -78,7 +79,11 @@ internal class ListenSessionHarness : AutoCloseable {
                 }
 
     init {
-        scope.launch { controller.seekRequests.collect { seekRequests.add(it) } }
+        scope.launch {
+            controller.events.collect {
+                if (it is PlaybackEvent.SeekRequested) seekRequests.add(it.position.inWholeMilliseconds)
+            }
+        }
     }
 
     /**
@@ -116,7 +121,16 @@ internal class ListenSessionHarness : AutoCloseable {
     companion object {
         private const val MAX_IDLES = 20
 
-        /** A chunk's audio, which the fake player only names, lasting [durationMs]. */
-        fun chunk(index: Int, durationMs: Long) = ChunkFile(index, File("/chunks/$index.wav"), durationMs)
+        /**
+         * A chunk's audio, which the fake player only names, lasting [durationMs] from [startsAtMs] into the article.
+         */
+        fun chunk(index: Int, durationMs: Long, startsAtMs: Long = 0) =
+            PlayableItem(
+                index,
+                File("/chunks/$index.wav"),
+                startsAtMs.milliseconds,
+                durationMs.milliseconds,
+                isMeasured = true,
+            )
     }
 }

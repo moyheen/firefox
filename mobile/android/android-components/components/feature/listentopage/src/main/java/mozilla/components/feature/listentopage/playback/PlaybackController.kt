@@ -16,6 +16,7 @@ import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -37,8 +38,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import mozilla.components.feature.listentopage.ChunkState
-import mozilla.components.feature.listentopage.PlaybackState
 import mozilla.components.feature.listentopage.R
 import mozilla.components.support.ktx.android.content.appName
 
@@ -72,34 +71,27 @@ interface PlaybackController {
     /**
      * What the playback is doing, as the player reports it.
      *
-     * It holds a default [PlaybackState] while no playback is connected.
+     * It holds a default [PlaybackStatus] while no playback is connected.
      */
-    val status: StateFlow<PlaybackState>
+    val status: StateFlow<PlaybackStatus>
 
-    /** Positions into the article that the notification or the lock screen asked to move to. */
-    val seekRequests: Flow<Long>
+    /** What happened to the playback that no command asked for. */
+    val events: Flow<PlaybackEvent>
         get() = emptyFlow()
 
-    /**
-     * Emits when the playback ends without [release] ending it, such as when the app is removed from the recent apps or
-     * the notification is dismissed.
-     */
-    val sessionEnded: Flow<Unit>
-        get() = emptyFlow()
-
-    /** Tells the notification how long the whole article lasts. Does nothing while no playback is connected. */
-    suspend fun setArticleDuration(durationMs: Long)
+    /** Tells the notification how long the article is shown to last. Does nothing while no playback is connected. */
+    suspend fun setArticleDuration(duration: Duration)
 
     /**
-     * Starts reading an article out from [chunk], its opening, replacing anything already playing, as
+     * Starts reading an article out from [item], its opening, replacing anything already playing, as
      * [articleDisplayData] describes it.
      *
      * @param tabId The tab the article is from, which tapping the notification opens.
      */
-    suspend fun startArticle(chunk: ChunkFile, articleDisplayData: ArticleDisplayData, tabId: String)
+    suspend fun startArticle(item: PlayableItem, articleDisplayData: ArticleDisplayData, tabId: String)
 
-    /** Adds [chunk] to the end of what is queued, to be read out once the rest has been. */
-    suspend fun enqueue(chunk: ChunkFile)
+    /** Adds [item] to the end of what is queued, to be read out once the rest has been. */
+    suspend fun enqueue(item: PlayableItem)
 
     /** Pauses playback, keeping the position. */
     suspend fun pause()
@@ -108,31 +100,27 @@ interface PlaybackController {
     suspend fun resume()
 
     /**
-     * Moves playback to [positionMs] into the article, inside [chunkIndex].
+     * Moves playback to [position] into the article, inside [chunkIndex].
      *
      * @return Whether the player holds the chunk at [chunkIndex]. When it does not, nothing moved, and playback has to
      *   be restarted there.
      */
-    suspend fun seekTo(chunkIndex: Int, positionMs: Long): Boolean
+    suspend fun seekTo(chunkIndex: Int, position: Duration): Boolean
+
+    /** Drops what is queued and starts again on [item] at [position] into the article. */
+    suspend fun restartAt(item: PlayableItem, position: Duration)
 
     /**
-     * Drops what is queued and starts again on [chunk] at [positionMs] into the article.
-     *
-     * @param chunkStartMs Where [chunk] starts in the article.
+     * Stops the audio and reports buffering at [position] into the article until [restartAt] starts the playlist there,
+     * for a seek whose chunk has to be made first.
      */
-    suspend fun restartAt(chunk: ChunkFile, chunkStartMs: Long, positionMs: Long)
+    suspend fun stopAndBufferAt(position: Duration)
 
     /**
-     * Stops the audio and reports buffering at [positionMs] into the article until [restartAt] starts the playlist
-     * there, for a seek whose chunk has to be made first.
-     */
-    suspend fun stopAndBufferAt(positionMs: Long)
-
-    /**
-     * Stops the audio where a seek finished the article, and shows [positionMs], its end, until playback is moved or
+     * Stops the audio where a seek finished the article, and shows [position], its end, until playback is moved or
      * started again. A play from outside the app, such as the notification, then starts the article again from the top.
      */
-    suspend fun finishAt(positionMs: Long)
+    suspend fun finishAt(position: Duration)
 
     /** Reads the rest of the article out at [speed]. */
     suspend fun setSpeed(speed: PlaybackSpeed)
@@ -191,32 +179,19 @@ internal constructor(
     // Main thread only, like the controller it produces.
     private var connection: Deferred<MediaController>? = null
 
-    private val _status = MutableStateFlow(PlaybackState())
-    override val status: StateFlow<PlaybackState> = _status.asStateFlow()
+    private val _status = MutableStateFlow(PlaybackStatus())
+    override val status: StateFlow<PlaybackStatus> = _status.asStateFlow()
 
-    private val _seekRequests =
-        MutableSharedFlow<Long>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    override val seekRequests: SharedFlow<Long> = _seekRequests.asSharedFlow()
+    private val _events =
+        MutableSharedFlow<PlaybackEvent>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    override val events: SharedFlow<PlaybackEvent> = _events.asSharedFlow()
 
-    private val _sessionEnded =
-        MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    override val sessionEnded: SharedFlow<Unit> = _sessionEnded.asSharedFlow()
-
-    // The length of the article last given to the session, which a restart carries on.
-    private var articleDurationMs = 0L
-
-    override suspend fun setArticleDuration(durationMs: Long) {
+    override suspend fun setArticleDuration(duration: Duration) {
         withContext(Dispatchers.Main) {
             // Never connects: a report that arrives after the playback was released must not start it again.
             val connected = connection ?: return@withContext
             val controller = runCatching { connected.await() }.getOrNull() ?: return@withContext
-            if (durationMs == articleDurationMs) return@withContext
-
-            articleDurationMs = durationMs
-            controller.sendCustomCommand(
-                SessionCommand(COMMAND_SET_ARTICLE_DURATION, Bundle.EMPTY),
-                Bundle().apply { putLong(KEY_DURATION_MS, durationMs) },
-            )
+            controller.sendArticleDuration(duration)
         }
     }
 
@@ -241,17 +216,17 @@ internal constructor(
             // onEvents rather than the individual callbacks: it runs once per batch of changes, where the separate
             // callbacks would each publish a snapshot of the same batch.
             override fun onEvents(player: Player, events: Player.Events) {
-                _status.value = player.toPlaybackState()
+                _status.value = player.toPlaybackStatus()
                 samplePosition(player)
             }
         }
 
-    override suspend fun startArticle(chunk: ChunkFile, articleDisplayData: ArticleDisplayData, tabId: String) =
+    override suspend fun startArticle(item: PlayableItem, articleDisplayData: ArticleDisplayData, tabId: String) =
         onController {
             // Published before the command, so that a report the previous session left behind cannot be read as this
             // session's in the time it takes the player to report for itself.
             _status.value =
-                PlaybackState(
+                PlaybackStatus(
                     phase = PlaybackPhase.Buffering,
                     speed = PlaybackSpeed.nearest(it.playbackParameters.speed),
                 )
@@ -266,15 +241,15 @@ internal constructor(
             )
 
             // A new article starts at its top, with no length until one is worked out.
-            articleDurationMs = 0
-            it.setMediaItem(chunk.toMediaItem(displayData = shownDisplayData, articleTimeline = ArticleTimeline()))
+            it.sendArticleDuration(Duration.ZERO)
+            it.setMediaItem(item.toMediaItem(shownDisplayData))
             it.prepare()
             it.play()
         }
 
-    override suspend fun enqueue(chunk: ChunkFile) = onController {
+    override suspend fun enqueue(item: PlayableItem) = onController {
         val displayData = this.displayData ?: return@onController
-        it.addMediaItem(chunk.toMediaItem(displayData))
+        it.addMediaItem(item.toMediaItem(displayData))
 
         if (it.playbackState == Player.STATE_ENDED) {
             it.seekTo(it.mediaItemCount - 1, it.currentPosition)
@@ -288,43 +263,42 @@ internal constructor(
         it.play()
     }
 
-    override suspend fun seekTo(chunkIndex: Int, positionMs: Long): Boolean {
+    override suspend fun seekTo(chunkIndex: Int, position: Duration): Boolean {
         var hasChunk = false
         onController {
             val item =
                 (0 until it.mediaItemCount).firstOrNull { index -> it.getMediaItemAt(index).chunkIndex() == chunkIndex }
             if (item != null) {
-                it.seekTo(item, positionMs)
+                it.seekTo(item, position.inWholeMilliseconds)
                 hasChunk = true
             }
         }
         return hasChunk
     }
 
-    override suspend fun restartAt(chunk: ChunkFile, chunkStartMs: Long, positionMs: Long) = onController {
+    override suspend fun restartAt(item: PlayableItem, position: Duration) = onController {
         val displayData = this.displayData ?: return@onController
-        val articleTimeline = ArticleTimeline(playlistStartMs = chunkStartMs, durationMs = articleDurationMs)
 
         // The position goes in with the item rather than as a seek afterwards, which would let the player start at
         // the top of the chunk and be moved off it a moment later.
-        it.setMediaItem(chunk.toMediaItem(displayData, articleTimeline), positionMs)
+        it.setMediaItem(item.toMediaItem(displayData), position.inWholeMilliseconds)
 
         // Prepared but not played: a player that was paused stays paused.
         it.prepare()
     }
 
-    override suspend fun finishAt(positionMs: Long) = onController {
+    override suspend fun finishAt(position: Duration) = onController {
         it.sendCustomCommand(
             SessionCommand(COMMAND_FINISH_AT, Bundle.EMPTY),
-            Bundle().apply { putLong(KEY_POSITION_MS, positionMs) },
+            Bundle().apply { putLong(KEY_POSITION_MS, position.inWholeMilliseconds) },
         )
     }
 
     // The session stops the player itself once it has the position to buffer at.
-    override suspend fun stopAndBufferAt(positionMs: Long) = onController {
+    override suspend fun stopAndBufferAt(position: Duration) = onController {
         it.sendCustomCommand(
             SessionCommand(COMMAND_STOP_AND_BUFFER_AT, Bundle.EMPTY),
-            Bundle().apply { putLong(KEY_POSITION_MS, positionMs) },
+            Bundle().apply { putLong(KEY_POSITION_MS, position.inWholeMilliseconds) },
         )
     }
 
@@ -368,10 +342,10 @@ internal constructor(
 
                     val sampled = player.currentPosition
                     _status.update {
-                        if (it.positionMs / MS_PER_SECOND == sampled / MS_PER_SECOND) {
+                        if (it.position.inWholeMilliseconds / MS_PER_SECOND == sampled / MS_PER_SECOND) {
                             it
                         } else {
-                            it.copy(positionMs = sampled)
+                            it.copy(position = sampled.milliseconds)
                         }
                     }
                 }
@@ -383,8 +357,7 @@ internal constructor(
         positionJob?.cancel()
         positionJob = null
         displayData = null
-        articleDurationMs = 0
-        _status.value = PlaybackState()
+        _status.value = PlaybackStatus()
     }
 
     private suspend fun onController(command: (MediaController) -> Unit) =
@@ -424,7 +397,7 @@ internal constructor(
                             val isConnected = connection != null
                             connection = null
                             forgetStatus()
-                            if (isConnected) _sessionEnded.tryEmit(Unit)
+                            if (isConnected) _events.tryEmit(PlaybackEvent.SessionEnded)
                         }
 
                         override fun onCustomCommand(
@@ -433,7 +406,7 @@ internal constructor(
                             args: Bundle,
                         ): ListenableFuture<SessionResult> {
                             if (command.customAction == COMMAND_SEEK_ARTICLE) {
-                                _seekRequests.tryEmit(args.getLong(KEY_POSITION_MS))
+                                _events.tryEmit(PlaybackEvent.SeekRequested(args.getLong(KEY_POSITION_MS).milliseconds))
                             }
                             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                         }
@@ -454,7 +427,7 @@ internal constructor(
         }
 
         controller.addListener(playerListener)
-        _status.value = controller.toPlaybackState()
+        _status.value = controller.toPlaybackStatus()
 
         return controller
     }
@@ -464,17 +437,22 @@ internal constructor(
     }
 }
 
-private fun Player.toPlaybackState() =
-    PlaybackState(
+private fun Player.toPlaybackStatus() =
+    PlaybackStatus(
         phase = toPlaybackPhase(),
-        chunk =
-            ChunkState(
-                index = currentMediaItem?.chunkIndex() ?: currentMediaItemIndex,
-                durationMs = currentMediaItem?.measuredDurationMs(),
-            ),
-        positionMs = currentPosition,
+        chunkIndex = currentMediaItem?.chunkIndex() ?: currentMediaItemIndex,
+        chunkLength = currentMediaItem?.measuredLength(),
+        position = currentPosition.milliseconds,
         speed = PlaybackSpeed.nearest(playbackParameters.speed),
     )
+
+/** Tells the session how long the article is shown to last. */
+private fun MediaController.sendArticleDuration(duration: Duration) {
+    sendCustomCommand(
+        SessionCommand(COMMAND_SET_ARTICLE_DURATION, Bundle.EMPTY),
+        Bundle().apply { putLong(KEY_DURATION_MS, duration.inWholeMilliseconds) },
+    )
+}
 
 /** The phase the player is in. */
 internal fun Player.toPlaybackPhase() =

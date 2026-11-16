@@ -11,8 +11,10 @@ import java.util.Locale
  *
  * @property id The engine's own name for the voice, which is what it is selected and saved by.
  * @property locale The language and region the voice reads in. The list offers one voice per region.
+ * @property engine The package of the speech engine that offers the voice. A voice's [id] only means something to that
+ *   engine.
  */
-data class Voice(val id: String, val locale: Locale) {
+data class Voice(val id: String, val locale: Locale, val engine: String) {
     /**
      * The voice as the user reads it, for example "English (United Kingdom)".
      *

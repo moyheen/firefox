@@ -16,17 +16,16 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
-import mozilla.components.feature.listentopage.content.TextChunker
 import mozilla.components.feature.listentopage.facts.ListenToPageFacts
 import mozilla.components.feature.listentopage.fakes.FakeAudioFileCache
 import mozilla.components.feature.listentopage.fakes.FakeSpeechSynthesizer
-import mozilla.components.feature.listentopage.playback.AUDIO_WINDOW_RADIUS
-import mozilla.components.feature.listentopage.playback.ChunkAudio
-import mozilla.components.feature.listentopage.playback.DirectoryAudioFileCache
+import mozilla.components.feature.listentopage.synthesis.audio.ChunkFiles
+import mozilla.components.feature.listentopage.synthesis.audio.DirectoryAudioFileCache
 import mozilla.components.support.base.facts.Facts
 import mozilla.components.support.base.facts.processor.CollectionProcessor
 import org.junit.After
@@ -56,6 +55,9 @@ class SynthesisQueueTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
     private val cache = FakeAudioFileCache()
+
+    // How long each chunk was reported to last. The queue keeps no copy of its own.
+    private val measured = mutableMapOf<Int, Duration>()
 
     private val facts = CollectionProcessor()
 
@@ -244,7 +246,7 @@ class SynthesisQueueTest {
         val queue =
             SynthesisQueue(
                 synthesizer = engine,
-                audio = ChunkAudio(cache),
+                audio = ChunkFiles(cache),
                 chunker = TextChunker.android(),
                 workDispatcher = Dispatchers.Unconfined,
                 elapsedMs = { testScheduler.currentTime },
@@ -267,7 +269,7 @@ class SynthesisQueueTest {
         val queue =
             SynthesisQueue(
                 synthesizer = engine,
-                audio = ChunkAudio(DirectoryAudioFileCache({ temporaryFolder.root }, Dispatchers.Unconfined)),
+                audio = ChunkFiles(DirectoryAudioFileCache({ temporaryFolder.root }, Dispatchers.Unconfined)),
                 chunker = TextChunker.android(),
                 workDispatcher = Dispatchers.Unconfined,
                 elapsedMs = { testScheduler.currentTime },
@@ -338,7 +340,7 @@ class SynthesisQueueTest {
         // The chunk still lasts as long as it did, so the bar covering the article does not shorten because the
         // system wanted the space back.
         assertNull(queue.fileFor(0))
-        assertEquals(OPENING_AUDIO, queue.durationOf(0))
+        assertEquals(OPENING_AUDIO, measured.get(0))
     }
 
     @Test
@@ -351,8 +353,8 @@ class SynthesisQueueTest {
 
         // The opening and everything the window made, not the opening alone. A progress bar covering the article has
         // to add up the real lengths of the chunks behind it.
-        (0..AUDIO_WINDOW_RADIUS).forEach { assertEquals("Chunk $it", OPENING_AUDIO, queue.durationOf(it)) }
-        assertNull(queue.durationOf(AUDIO_WINDOW_RADIUS + 1))
+        (0..AUDIO_WINDOW_RADIUS).forEach { assertEquals("Chunk $it", OPENING_AUDIO, measured.get(it)) }
+        assertNull(measured.get(AUDIO_WINDOW_RADIUS + 1))
     }
 
     @Test
@@ -365,7 +367,7 @@ class SynthesisQueueTest {
         queue.moveWindowTo(playingChunkIndex = AUDIO_WINDOW_RADIUS * 2 + 1)
 
         assertNull("The audio should have gone", queue.fileFor(0))
-        assertEquals("Its length should not have", OPENING_AUDIO, queue.durationOf(0))
+        assertEquals("Its length should not have", OPENING_AUDIO, measured.get(0))
     }
 
     @Test
@@ -375,7 +377,7 @@ class SynthesisQueueTest {
 
         // Nothing to add up, so whoever is covering the article sizes this chunk from its text and the rate. There is
         // no rate either here, which is the case a caller has to expect rather than the unusual one.
-        assertNull(queue.durationOf(0))
+        assertNull(measured.get(0))
         assertNull(queue.speechRate)
         assertTrue("Chunk of ${queue.charactersIn(0)} characters", queue.charactersIn(0) > 0)
     }
@@ -391,14 +393,14 @@ class SynthesisQueueTest {
     }
 
     @Test
-    fun `test that clearing forgets the lengths as well as the audio`() = runTest {
+    fun `test that clearing forgets the article as well as the audio`() = runTest {
         val queue = queueWith(FakeSpeechSynthesizer())
         queue.startReading(article(sentences = 200), "en-US")
 
         queue.clear()
 
-        assertNull(queue.durationOf(0))
         assertNull(queue.speechRate)
+        assertEquals(0, queue.chunkCount)
     }
 
     @Test
@@ -457,7 +459,7 @@ class SynthesisQueueTest {
         val queue =
             SynthesisQueue(
                 synthesizer = FakeSpeechSynthesizer(),
-                audio = ChunkAudio(cache),
+                audio = ChunkFiles(cache),
                 chunker = TextChunker.android(),
                 workDispatcher = Dispatchers.Unconfined,
                 measureAudio = { OPENING_AUDIO },
@@ -478,7 +480,7 @@ class SynthesisQueueTest {
         val queue =
             SynthesisQueue(
                 synthesizer = engine,
-                audio = ChunkAudio(cache),
+                audio = ChunkFiles(cache),
                 chunker = TextChunker.android(),
                 workDispatcher = Dispatchers.Unconfined,
                 measureAudio = { (engine.requests.last().length / CHARS_PER_SECOND).seconds },
@@ -631,6 +633,27 @@ class SynthesisQueueTest {
         assertTrue(chunkSyntheses().all { (it.fileKilobytes ?: 0) > 0 })
     }
 
+    @Test
+    fun `test that a chunk cancelled while it is measured is still deleted with the rest`() = runTest {
+        val engine = FakeSpeechSynthesizer()
+        val queue =
+            SynthesisQueue(
+                synthesizer = engine,
+                audio = ChunkFiles(cache),
+                chunker = TextChunker.android(),
+                workDispatcher = Dispatchers.Unconfined,
+                measureAudio = { awaitCancellation() },
+                elapsedMs = { testScheduler.currentTime },
+            )
+        val reading =
+            async(start = CoroutineStart.UNDISPATCHED) { queue.startReading(article(sentences = 20), "en-US") }
+
+        reading.cancelAndJoin()
+        queue.clear()
+
+        assertEquals(engine.files, cache.deleted)
+    }
+
     private fun chunkSyntheses() =
         facts.facts
             .filter { it.item == ListenToPageFacts.Items.CHUNK_SYNTHESIZED }
@@ -644,11 +667,12 @@ class SynthesisQueueTest {
     ) =
         SynthesisQueue(
             synthesizer = engine,
-            audio = ChunkAudio(cache),
+            audio = ChunkFiles(cache),
             chunker = TextChunker.android(),
             workDispatcher = Dispatchers.Unconfined,
             measureAudio = { audioLength },
             elapsedMs = { testScheduler.currentTime },
+            onMeasured = { index, length -> measured[index] = length },
         )
 
     private fun article(sentences: Int) = (1..sentences).joinToString(" ") { "Sentence $it is right here." }

@@ -4,7 +4,6 @@
 
 package mozilla.components.feature.listentopage
 
-import mozilla.components.feature.listentopage.playback.ArticleMeasurements
 import mozilla.components.feature.listentopage.playback.PlaybackPhase
 import mozilla.components.feature.listentopage.playback.PlaybackSpeed
 import mozilla.components.feature.listentopage.progress.ArticleProgress
@@ -26,9 +25,6 @@ import mozilla.components.lib.state.State
  * @property voiceState State relating to narrator voice.
  * @property playbackState State relating to the audio being played.
  * @property articleProgress How far through the whole article the playback has gotten.
- * @property articleMeasurements What the article's length is estimated from, or `null` while nothing is being
- *   synthesized.
- * @property playlist Which chunks have been handed to the player, and how its reports are read.
  */
 data class ListenState(
     val tabId: String? = null,
@@ -41,8 +37,6 @@ data class ListenState(
     val voiceState: VoiceState = VoiceState(),
     val playbackState: PlaybackState = PlaybackState(),
     val articleProgress: ArticleProgress = ArticleProgress(),
-    internal val articleMeasurements: ArticleMeasurements? = null,
-    internal val playlist: Playlist = Playlist(),
 ) : State
 
 /** The expanded or compact player. */
@@ -111,6 +105,10 @@ data class PlaybackState(
     val positionMs: Long = 0,
     val speed: PlaybackSpeed = PlaybackSpeed.Default,
 )
+
+/** Whether the player is reading the article out or waiting to. */
+val PlaybackState.isPlayingOrBuffering: Boolean
+    get() = phase == PlaybackPhase.Playing || phase == PlaybackPhase.Buffering
 
 /**
  * Current chunk state related to playback.

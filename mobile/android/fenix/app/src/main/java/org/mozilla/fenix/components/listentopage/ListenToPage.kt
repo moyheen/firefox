@@ -10,24 +10,26 @@ import android.os.Build
 import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
 import mozilla.components.browser.state.selector.findTab
+import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.base.profiler.Profiler
-import mozilla.components.feature.listentopage.ListenMiddleware
-import mozilla.components.feature.listentopage.ListenState
-import mozilla.components.feature.listentopage.ListenStore
 import mozilla.components.feature.listentopage.content.ContentExtractor
-import mozilla.components.feature.listentopage.listenReducer
-import mozilla.components.feature.listentopage.playback.DirectoryAudioFileCache
+import mozilla.components.feature.listentopage.createListenFeature
+import mozilla.components.feature.listentopage.playback.ArticleDisplayData
 import mozilla.components.feature.listentopage.playback.ListenPlaybackController
 import mozilla.components.feature.listentopage.settings.ListenSettings
 import mozilla.components.feature.listentopage.synthesis.SpeechSynthesizer
+import mozilla.components.feature.listentopage.synthesis.audio.DirectoryAudioFileCache
 import mozilla.components.feature.media.service.AbstractMediaSessionService
 import mozilla.components.support.base.facts.register
 import mozilla.components.support.base.ids.SharedIdsHelper
+import mozilla.components.support.ktx.kotlin.stripCommonSubdomains
 import mozilla.components.support.locale.LocaleManager
 import org.mozilla.fenix.listentopage.ListenToPageBinding
+import org.mozilla.fenix.listentopage.listenUrl
 
 private const val OPEN_TAB_PENDING_INTENT_TAG = "org.mozilla.fenix.listentopage.OPEN_TAB"
 
@@ -49,7 +51,8 @@ internal fun Context.openTabPendingIntent(tabId: String): PendingIntent? {
 /**
  * Provides access to the components that read a page out loud.
  *
- * @param browserStore Used to find the engine session of the tab an article is extracted from.
+ * @param browserStore Used to find the engine session of the tab an article is extracted from, to describe the article
+ *   on the notification, and to stop the session when the tab closes or leaves the article.
  * @param context Used to reach the speech engine, the audio cache and the playback service.
  * @param scope The application scope. The [store] outlives any screen, because the audio keeps playing when the app is
  *   in the background, so its work cannot be tied to a fragment or a view model.
@@ -69,44 +72,40 @@ class ListenToPage(
     /** Allows the behavior of individual tabs to be overridden for testing purposes. */
     val debugController by lazy { ListenDebugController() }
 
-    val store by lazy {
+    // The feature lives as long as the app, because the audio keeps playing when the app is in the background, so the
+    // app never closes it.
+    private val feature by lazy {
         val performanceMiddleware = profiler?.let { ListenPerformanceMiddleware(profiler = it) }?.also { it.register() }
 
-        val listenStore =
-            ListenStore(
-                initialState = ListenState(),
-                reducer = ::listenReducer,
-                middleware =
-                    listOfNotNull(
-                        performanceMiddleware,
-                        ListenMiddleware(
-                            browserStore = browserStore,
-                            contentExtractor = { tabId -> contentProvider.extractorFor(tabId).getContent(tabId) },
-                            // A provider, not an instance: building one binds the speech engine over IPC, and the
-                            // middleware closes it when a session stops, so it needs a way to get another.
-                            synthesizerProvider = {
-                                SpeechSynthesizer.android(context = context, audioCache = audioCache)
-                            },
-                            audioCache = audioCache,
-                            playbackController =
-                                ListenPlaybackController(
-                                    context = context,
-                                    scope = scope,
-                                    sessionActivity = { tabId -> context.openTabPendingIntent(tabId) },
-                                ),
-                            settings = settings,
-                            scope = scope,
-                        ),
-                        ListenToPageTelemetryMiddleware().also { it.register() },
-                        thermalStatusMonitor()?.let { ListenThermalMiddleware(monitor = it) },
-                    ),
-            )
-        startListenBinding(listenStore = listenStore)
-        listenStore
+        createListenFeature(
+            contentExtractor = { tabId -> contentProvider.extractorFor(tabId).getContent(tabId) },
+            describeArticle = { tabId -> browserStore.state.findTab(tabId).describeArticle() },
+            // A provider, not an instance: building one binds the speech engine over IPC, and the session closes
+            // it when it stops, so it needs a way to get another.
+            synthesizerProvider = { SpeechSynthesizer.android(context = context, audioCache = audioCache) },
+            audioCache = audioCache,
+            playbackController =
+                ListenPlaybackController(
+                    context = context,
+                    scope = scope,
+                    sessionActivity = { tabId -> context.openTabPendingIntent(tabId) },
+                ),
+            settings = settings,
+            scope = scope,
+            middlewareBefore = listOfNotNull(performanceMiddleware),
+            middlewareAfter =
+                listOfNotNull(
+                    tabWatcher,
+                    ListenToPageTelemetryMiddleware().also { it.register() },
+                    thermalStatusMonitor()?.let { ListenThermalMiddleware(monitor = it) },
+                ),
+        )
     }
 
-    private fun startListenBinding(listenStore: ListenStore) {
-        ListenToPageBinding(listenStore = listenStore, browserStore = browserStore).start()
+    private val tabWatcher by lazy { ListenTabWatcherMiddleware(browserStore = browserStore, scope = scope) }
+
+    val store by lazy {
+        feature.store.also { ListenToPageBinding(listenStore = it, browserStore = browserStore).start() }
     }
 
     private fun thermalStatusMonitor(): ThermalStatusMonitor? {
@@ -115,7 +114,7 @@ class ListenToPage(
         return PowerManagerThermalStatusMonitor(powerManager, ContextCompat.getMainExecutor(context))
     }
 
-    // One cache for the whole feature: the synthesizer writes the audio into it and the middleware empties it when the
+    // One cache for the whole feature: the synthesizer writes the audio into it and the session empties it when the
     // session stops. Two instances would each hold their own directory and neither would clean up after the other.
     private val audioCache by lazy { DirectoryAudioFileCache(context) }
 
@@ -137,3 +136,11 @@ class ListenToPage(
         )
     }
 }
+
+/** What the playback notification and the lock screen say about the article in this tab. */
+internal fun TabSessionState?.describeArticle(): ArticleDisplayData =
+    ArticleDisplayData(
+        title = this?.content?.title?.takeIf { it.isNotBlank() },
+        site = this?.listenUrl?.toUri()?.host?.takeIf { it.isNotBlank() }?.stripCommonSubdomains(),
+        isPrivate = this?.content?.private == true,
+    )

@@ -13,6 +13,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import kotlin.test.assertNotNull
+import kotlin.time.Duration.Companion.ZERO
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -33,7 +34,8 @@ class ListenPlayerTest {
 
     @Test
     fun `test that a chunk carries what the notification says is being read`() {
-        val item = File("/audio/1.wav").toMediaItem(ArticleDisplayData(title = "An article", site = "example.org"))
+        val item =
+            chunkAt(File("/audio/1.wav")).toMediaItem(ArticleDisplayData(title = "An article", site = "example.org"))
 
         assertEquals("An article", item.mediaMetadata.title.toString())
         assertEquals("example.org", item.mediaMetadata.artist.toString())
@@ -43,7 +45,7 @@ class ListenPlayerTest {
     fun `test that a chunk still plays the file it was made from`() {
         val file = File("/audio/1.wav")
 
-        val item = file.toMediaItem(ArticleDisplayData())
+        val item = chunkAt(file).toMediaItem(ArticleDisplayData())
 
         assertEquals(Uri.fromFile(file), item.localConfiguration?.uri)
     }
@@ -54,7 +56,7 @@ class ListenPlayerTest {
         val audioManager = testContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val exoPlayer = ListenPlayer(testContext).also { player = it }.exoPlayer
 
-        exoPlayer.setMediaItem(File("/audio/1.wav").toMediaItem(ArticleDisplayData()))
+        exoPlayer.setMediaItem(chunkAt(File("/audio/1.wav")).toMediaItem(ArticleDisplayData()))
         exoPlayer.prepare()
         exoPlayer.play()
         // The player asks for focus from its own playback thread.
@@ -66,4 +68,6 @@ class ListenPlayerTest {
         assertEquals(AudioAttributes.CONTENT_TYPE_SPEECH, request.audioAttributes.contentType)
         assertTrue(request.willPauseWhenDucked())
     }
+
+    private fun chunkAt(file: File) = PlayableItem(index = 0, file = file, startsAt = ZERO, length = ZERO)
 }

@@ -34,7 +34,7 @@ internal data class SpeechRate(val charsPerSecond: Double) {
         (duration.toDouble(DurationUnit.SECONDS) * charsPerSecond).roundToInt().coerceAtLeast(1)
 
     /** How long [chars] characters take to read out at this rate. */
-    fun durationOf(chars: Int): Duration = (chars / charsPerSecond).seconds
+    fun timeToRead(chars: Int): Duration = (chars / charsPerSecond).seconds
 
     companion object {
         /**

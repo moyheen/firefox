@@ -1184,9 +1184,7 @@ projects:
     path: components/feature/listentopage
     publish: true
     upstream_dependencies:
-    - components:browser-state
     - components:compose-base
-    - components:concept-awesomebar
     - components:concept-base
     - components:concept-engine
     - components:concept-fetch

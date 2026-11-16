@@ -213,7 +213,7 @@ class ListenPerformanceMiddlewareTest {
                 ListenAction.User.Controls.SeekRequested(fraction = 0.5f),
                 ListenAction.User.Controls.RewindClicked,
                 ListenAction.User.Controls.ForwardClicked,
-                ListenAction.User.Voices.VoiceSelected(Voice("en-gb", Locale.UK)),
+                ListenAction.User.Voices.VoiceSelected(Voice("en-gb", Locale.UK, engine = "com.example.tts")),
             )
 
         requests.forEach { request ->
@@ -364,7 +364,7 @@ class ListenPerformanceMiddlewareTest {
         val store = createStore(playing)
 
         store.dispatch(ListenAction.User.Controls.SeekRequested(fraction = 0.5f))
-        store.dispatch(ListenAction.User.Voices.VoiceSelected(Voice("en-gb", Locale.UK)))
+        store.dispatch(ListenAction.User.Voices.VoiceSelected(Voice("en-gb", Locale.UK, engine = "com.example.tts")))
         store.dispatch(ListenAction.System.Playback.PlaybackStarted(ChunkState(index = 3), positionMs = 0))
 
         assertTrue(profiler.markers.none { it.name.startsWith(SEEK_LATENCY) })

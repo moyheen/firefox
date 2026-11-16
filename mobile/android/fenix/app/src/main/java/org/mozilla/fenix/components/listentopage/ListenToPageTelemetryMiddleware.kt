@@ -6,10 +6,9 @@ package org.mozilla.fenix.components.listentopage
 
 import mozilla.components.feature.listentopage.ListenAction
 import mozilla.components.feature.listentopage.ListenState
-import mozilla.components.feature.listentopage.PlaybackState
 import mozilla.components.feature.listentopage.content.LanguageSource
 import mozilla.components.feature.listentopage.facts.ListenToPageFacts
-import mozilla.components.feature.listentopage.playback.PlaybackPhase
+import mozilla.components.feature.listentopage.isPlayingOrBuffering
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
 import mozilla.components.support.base.Component
@@ -39,10 +38,10 @@ internal class ListenToPageTelemetryMiddleware : Middleware<ListenState, ListenA
     private fun handleListenToPageAction(store: Store<ListenState, ListenAction>, action: ListenAction) {
         when (action) {
             is ListenAction.User.Session -> handleSession(action)
-            is ListenAction.System.Content -> handleContent(action)
-            is ListenAction.System.Playback -> handlePlayback(action)
             is ListenAction.User.Controls -> handleControls(store, action)
             is ListenAction.User.Voices -> handleUserVoices(store, action)
+            is ListenAction.System.Content -> handleContent(action)
+            is ListenAction.System.Playback -> handlePlayback(action)
             is ListenAction.System.Voices -> handleSystemVoices(store, action)
             is ListenAction.System.Synthesis.SynthesisFailed -> ListenToPage.synthesisFailed.record(NoExtras())
             else -> Unit
@@ -139,13 +138,8 @@ internal class ListenToPageTelemetryMiddleware : Middleware<ListenState, ListenA
         when (action) {
             is ListenAction.User.Voices.VoiceSelected -> {
                 val isDefault = action.voice == store.state.voiceState.availableVoices.firstOrNull()
-                val source =
-                    when (action.source) {
-                        ListenAction.User.Voices.VoiceSource.UserSelected -> USER_SELECTED
-                        ListenAction.User.Voices.VoiceSource.Fallback -> FALLBACK
-                    }
                 ListenToPage.voiceSelected.record(
-                    ListenToPage.VoiceSelectedExtra(isDefault = isDefault, source = source)
+                    ListenToPage.VoiceSelectedExtra(isDefault = isDefault, source = USER_SELECTED)
                 )
             }
 
@@ -159,6 +153,13 @@ internal class ListenToPageTelemetryMiddleware : Middleware<ListenState, ListenA
             ListenAction.System.Voices.NoOfflineVoicesAvailable -> {
                 val language = store.state.languageTag.orEmpty()
                 ListenToPage.noOfflineVoice.record(ListenToPage.NoOfflineVoiceExtra(language = language))
+            }
+
+            is ListenAction.System.Voices.FallbackVoiceChosen -> {
+                val isDefault = action.voice == store.state.voiceState.availableVoices.firstOrNull()
+                ListenToPage.voiceSelected.record(
+                    ListenToPage.VoiceSelectedExtra(isDefault = isDefault, source = FALLBACK)
+                )
             }
 
             is ListenAction.System.Voices.AvailableVoicesLoaded -> Unit
@@ -202,6 +203,3 @@ private const val PAGE = "page"
 private const val DEVICE = "device"
 private const val IN_APP = "in_app"
 private const val MEDIA_CONTROLS = "media_controls"
-
-private val PlaybackState.isPlayingOrBuffering: Boolean
-    get() = phase == PlaybackPhase.Playing || phase == PlaybackPhase.Buffering

@@ -7,7 +7,6 @@ package mozilla.components.feature.listentopage.synthesis
 import kotlin.math.min
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import mozilla.components.feature.listentopage.content.TextChunker
 
 /**
  * Splits the first sentence off [text], to be synthesized before anything about the voice is known.

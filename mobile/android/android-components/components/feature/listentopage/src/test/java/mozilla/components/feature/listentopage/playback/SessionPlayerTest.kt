@@ -5,11 +5,9 @@
 package mozilla.components.feature.listentopage.playback
 
 import android.content.Context
-import android.os.Bundle
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.Timeline
@@ -22,6 +20,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import java.io.File
 import java.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import mozilla.components.feature.listentopage.fakes.FakeChunkPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,7 +38,7 @@ class SessionPlayerTest {
     fun `test that the session is given the position and duration of the whole article`() {
         val player = SessionPlayer(ChunkPlayer()) {}
 
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 75_000, durationMs = 600_000)))
+        player.startPlaylist(Placement(playlistStartMs = 75_000, durationMs = 600_000))
 
         assertEquals(75_000L + FIRST_CHUNK_MS + 15_000, player.currentPosition)
         assertEquals(600_000L, player.duration)
@@ -48,7 +47,7 @@ class SessionPlayerTest {
     @Test
     fun `test that clearing the playlist forgets where it was in the article`() {
         val player = SessionPlayer(FakeChunkPlayer()) {}
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 134_247, durationMs = 600_000)))
+        player.startPlaylist(Placement(playlistStartMs = 134_247, durationMs = 600_000))
 
         player.clearMediaItems()
 
@@ -73,7 +72,7 @@ class SessionPlayerTest {
         val chunk = ChunkPlayer()
         val articleSeeks = mutableListOf<Long>()
         val player = SessionPlayer(chunk) { articleSeeks.add(it) }
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 75_000, durationMs = 600_000)))
+        player.startPlaylist(Placement(playlistStartMs = 75_000, durationMs = 600_000))
 
         player.seekBack()
 
@@ -86,9 +85,7 @@ class SessionPlayerTest {
         val chunk = ChunkPlayer()
         val articleSeeks = mutableListOf<Long>()
         val player = SessionPlayer(chunk) { articleSeeks.add(it) }
-        player.setMediaItem(
-            playlistFirstItem(ArticleTimeline(playlistStartMs = 0, durationMs = FIRST_CHUNK_MS + 20_000))
-        )
+        player.startPlaylist(Placement(playlistStartMs = 0, durationMs = FIRST_CHUNK_MS + 20_000))
 
         player.seekForward()
 
@@ -101,7 +98,7 @@ class SessionPlayerTest {
         val chunk = ChunkPlayer()
         assertEquals(Player.STATE_READY, chunk.playbackState)
         val player = SessionPlayer(chunk) {}
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 75_000)))
+        player.startPlaylist(Placement(playlistStartMs = 75_000))
         val positions = recordSeekPositions(player)
 
         player.seekTo(200_000)
@@ -132,7 +129,7 @@ class SessionPlayerTest {
     fun `test that a seek into an item is taken in article time and moves the chunk`() {
         val chunk = ChunkPlayer()
         val player = SessionPlayer(chunk) {}
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 75_000)))
+        player.startPlaylist(Placement(playlistStartMs = 75_000))
 
         player.seekTo(1, 75_000L + FIRST_CHUNK_MS + 5_000)
 
@@ -144,7 +141,7 @@ class SessionPlayerTest {
         val chunk = ChunkPlayer()
         val player = SessionPlayer(chunk) {}
 
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 75_000)), 80_000)
+        player.startPlaylist(Placement(playlistStartMs = 75_000), positionMs = 80_000)
 
         assertEquals(listOf(5_000L), chunk.startPositions)
     }
@@ -154,15 +151,15 @@ class SessionPlayerTest {
         val chunk = ChunkPlayer()
         val player = SessionPlayer(chunk) {}
 
-        player.setMediaItems(listOf(playlistFirstItem(ArticleTimeline(playlistStartMs = 75_000))), 0, 80_000)
+        player.setMediaItems(listOf(playlistFirstItem(Placement(playlistStartMs = 75_000))), 0, 80_000)
 
         assertEquals(listOf(5_000L), chunk.startPositions)
     }
 
     @Test
     fun `test that a playlist a controller starts reaches the player at the position into its chunk`() =
-        throughSession(ArticleTimeline(playlistStartMs = 75_000)) { chunk, controller, _ ->
-            controller.setMediaItem(MediaItem.fromUri("file:///chunk.wav"), 80_000)
+        throughSession(Placement(playlistStartMs = 75_000)) { chunk, controller, _ ->
+            controller.setMediaItem(chunkItem(startsAtMs = 75_000), 80_000)
             shadowOf(Looper.getMainLooper()).idle()
 
             assertEquals(listOf(5_000L), chunk.startPositions)
@@ -170,7 +167,7 @@ class SessionPlayerTest {
 
     @Test
     fun `test that a seek a controller makes into an item reaches the player as a position into its chunk`() =
-        throughSession(ArticleTimeline(playlistStartMs = 75_000)) { chunk, controller, _ ->
+        throughSession(Placement(playlistStartMs = 75_000)) { chunk, controller, _ ->
             controller.seekTo(1, 75_000L + FIRST_CHUNK_MS + 5_000)
             shadowOf(Looper.getMainLooper()).idle()
 
@@ -179,7 +176,7 @@ class SessionPlayerTest {
 
     @Test
     fun `test that skipping back through the session is an article seek`() =
-        throughSession(ArticleTimeline(playlistStartMs = 75_000, durationMs = 600_000)) { chunk, controller, seeks ->
+        throughSession(Placement(playlistStartMs = 75_000, durationMs = 600_000)) { chunk, controller, seeks ->
             controller.seekBack()
             shadowOf(Looper.getMainLooper()).idle()
 
@@ -187,22 +184,31 @@ class SessionPlayerTest {
             assertTrue("the chunk playing was moved", chunk.seeks.isEmpty())
         }
 
-    /** A playlist's first item, placed in the article at [timeline], as the controller hands it to the session. */
-    private fun playlistFirstItem(timeline: ArticleTimeline) =
-        File("chunk").toMediaItem(ArticleDisplayData(), durationMs = FIRST_CHUNK_MS, articleTimeline = timeline)
+    /** A playlist's first item, placed in the article at [placement], as the controller hands it to the session. */
+    private fun playlistFirstItem(placement: Placement) = chunkItem(startsAtMs = placement.playlistStartMs)
+
+    /** Starts a playlist placed in the article at [placement], as the controller does, at [positionMs] if given. */
+    private fun SessionPlayer.startPlaylist(placement: Placement, positionMs: Long? = null) {
+        if (placement.durationMs > 0) setArticleDuration(placement.durationMs)
+        if (positionMs == null) {
+            setMediaItem(playlistFirstItem(placement))
+        } else {
+            setMediaItem(playlistFirstItem(placement), positionMs)
+        }
+    }
 
     /**
-     * Runs [test] with a controller connected through a real session to a [SessionPlayer] at [timeline], so that what
+     * Runs [test] with a controller connected through a real session to a [SessionPlayer] at [placement], so that what
      * the session hands the player is what is tested rather than what the controller asked for.
      */
     private fun throughSession(
-        timeline: ArticleTimeline,
+        placement: Placement,
         test: (chunk: ChunkPlayer, controller: MediaController, articleSeeks: List<Long>) -> Unit,
     ) {
         val chunk = ChunkPlayer()
         val articleSeeks = mutableListOf<Long>()
         val player = SessionPlayer(chunk) { articleSeeks.add(it) }
-        player.setMediaItem(playlistFirstItem(timeline))
+        player.startPlaylist(placement)
         chunk.startPositions.clear()
         val context = ApplicationProvider.getApplicationContext<Context>()
         val session = MediaSession.Builder(context, player).build()
@@ -222,24 +228,31 @@ class SessionPlayerTest {
 
     @Test
     fun `test that an article position converts to the position into the item holding it`() {
-        val timeline = ArticleTimeline(playlistStartMs = 75_000)
+        val chunk = ChunkPlayer()
+        val player = SessionPlayer(chunk) {}
+        player.startPlaylist(Placement(playlistStartMs = 75_000))
+        chunk.seeks.clear()
 
-        assertEquals(5_000L, timeline.toChunkMs(ChunkPlayer(), 1, 75_000L + FIRST_CHUNK_MS + 5_000))
+        player.seekTo(1, 75_000L + FIRST_CHUNK_MS + 5_000)
+
+        assertEquals(listOf(1 to 5_000L), chunk.seeks)
     }
 
     @Test
-    fun `test that an item the player has not loaded is placed by the length it was measured at`() {
-        val timeline = ArticleTimeline(playlistStartMs = 75_000)
+    fun `test that an item the player has not loaded is placed by where it starts`() {
+        val player = SessionPlayer(ChunkPlayer(firstChunkLoaded = false)) {}
 
-        assertEquals(75_000L + FIRST_CHUNK_MS, timeline.chunkStartMs(ChunkPlayer(firstChunkLoaded = false)))
+        player.startPlaylist(Placement(playlistStartMs = 75_000))
+
+        assertEquals(75_000L + FIRST_CHUNK_MS + 15_000, player.currentPosition)
     }
 
     @Test
-    fun `test that a chunk's measured length is not offered as the length of the article`() {
-        val item = File("chunk").toMediaItem(ArticleDisplayData(), durationMs = FIRST_CHUNK_MS)
+    fun `test that a chunk's length is not offered as the length of the article`() {
+        val item = chunkItem(startsAtMs = 0)
 
         assertNull("the notification would show the chunk as the whole article", item.mediaMetadata.durationMs)
-        assertEquals(FIRST_CHUNK_MS, item.mediaMetadata.extras?.getLong(KEY_MEASURED_DURATION_MS))
+        assertEquals(FIRST_CHUNK_MS.milliseconds, item.length())
     }
 
     @Test
@@ -287,7 +300,7 @@ class SessionPlayerTest {
         shadowOf(Looper.getMainLooper()).idle()
         states.clear()
 
-        player.setMediaItem(File("chunk").toMediaItem(ArticleDisplayData(), durationMs = FIRST_CHUNK_MS))
+        player.setMediaItem(chunkItem(startsAtMs = 0))
         player.prepare()
         shadowOf(Looper.getMainLooper()).idle()
 
@@ -316,7 +329,7 @@ class SessionPlayerTest {
     fun `test that finishing the article pauses the player and shows its end as the position`() {
         val chunk = ChunkPlayer()
         val player = SessionPlayer(chunk) {}
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 75_000, durationMs = 600_000)))
+        player.startPlaylist(Placement(playlistStartMs = 75_000, durationMs = 600_000))
         player.play()
         shadowOf(Looper.getMainLooper()).idle()
 
@@ -333,7 +346,7 @@ class SessionPlayerTest {
         val chunk = ChunkPlayer()
         val articleSeeks = mutableListOf<Long>()
         val player = SessionPlayer(chunk) { articleSeeks.add(it) }
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 0, durationMs = 600_000)))
+        player.startPlaylist(Placement(playlistStartMs = 0, durationMs = 600_000))
         player.finishAt(600_000)
         shadowOf(Looper.getMainLooper()).idle()
 
@@ -355,7 +368,7 @@ class SessionPlayerTest {
     @Test
     fun `test that a play on a finished article is shown as playing while its start is loading`() {
         val player = SessionPlayer(ChunkPlayer()) {}
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 0, durationMs = 600_000)))
+        player.startPlaylist(Placement(playlistStartMs = 0, durationMs = 600_000))
         player.finishAt(600_000)
         shadowOf(Looper.getMainLooper()).idle()
 
@@ -369,7 +382,7 @@ class SessionPlayerTest {
     fun `test that playing a finished article plays its top once it is made again`() {
         val chunk = ChunkPlayer()
         val player = SessionPlayer(chunk) {}
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 0, durationMs = 600_000)))
+        player.startPlaylist(Placement(playlistStartMs = 0, durationMs = 600_000))
         player.finishAt(600_000)
         player.play()
         shadowOf(Looper.getMainLooper()).idle()
@@ -380,7 +393,7 @@ class SessionPlayerTest {
         assertTrue("the player made a sound while the top was made", chunk.stopped)
         assertEquals(0L, player.currentPosition)
 
-        player.setMediaItem(File("chunk").toMediaItem(ArticleDisplayData(), durationMs = FIRST_CHUNK_MS))
+        player.setMediaItem(chunkItem(startsAtMs = 0))
         player.prepare()
         shadowOf(Looper.getMainLooper()).idle()
 
@@ -393,7 +406,7 @@ class SessionPlayerTest {
         val player = SessionPlayer(ChunkPlayer()) {}
         player.finishAt(600_000)
 
-        player.setMediaItem(playlistFirstItem(ArticleTimeline(playlistStartMs = 0, durationMs = 600_000)))
+        player.startPlaylist(Placement(playlistStartMs = 0, durationMs = 600_000))
 
         assertEquals(FIRST_CHUNK_MS + 15_000, player.currentPosition)
     }
@@ -444,28 +457,22 @@ class SessionPlayerTest {
     }
 
     @Test
-    fun `test that a new playlist is placed in the article by its first item`() {
+    fun `test that a new playlist is started at the position into its first item`() {
         val chunk = ChunkPlayer()
         val player = SessionPlayer(chunk) {}
-        val first =
-            File("chunk")
-                .toMediaItem(
-                    ArticleDisplayData(),
-                    durationMs = FIRST_CHUNK_MS,
-                    articleTimeline = ArticleTimeline(playlistStartMs = 75_000, durationMs = 600_000),
-                )
+        player.setArticleDuration(600_000)
 
-        player.setMediaItems(listOf(first), 0, 80_000)
+        player.setMediaItems(listOf(chunkItem(startsAtMs = 75_000)), 0, 80_000)
 
-        assertEquals(ArticleTimeline(playlistStartMs = 75_000, durationMs = 600_000), player.articleTimeline)
+        assertEquals(ArticleTimeline(durationMs = 600_000), player.articleTimeline)
         assertEquals("the start was converted before the playlist was placed", listOf(5_000L), chunk.startPositions)
     }
 
     @Test
-    fun `test that an item queued behind others does not move the playlist`() {
-        val item = File("chunk").toMediaItem(ArticleDisplayData(), durationMs = FIRST_CHUNK_MS)
+    fun `test that each item says where it starts in the article`() {
+        val item = chunkItem(startsAtMs = 75_000)
 
-        assertNull(item.playlistTimeline())
+        assertEquals(75_000L.milliseconds, item.startsAt())
     }
 }
 
@@ -511,7 +518,7 @@ private fun recordSeekPositions(player: Player): MutableList<Long> {
 /**
  * A player 15 seconds into the second of two chunks, which records what it is asked to move to.
  *
- * @param firstChunkLoaded Whether the player knows how long the first chunk is. Its measured length is always known.
+ * @param firstChunkLoaded Whether the player knows how long the first chunk is.
  */
 @OptIn(UnstableApi::class)
 private class ChunkPlayer(private val firstChunkLoaded: Boolean = true) : SimpleBasePlayer(Looper.getMainLooper()) {
@@ -522,6 +529,9 @@ private class ChunkPlayer(private val firstChunkLoaded: Boolean = true) : Simple
 
     var shouldPlay = false
         private set
+
+    // Where the playlist this player was last given starts in the article. Its own two items follow on from there.
+    private var firstStartsAtMs = 0L
 
     /** Stops the player, as buffering for a seek does, and reports it. */
     fun stopAndReport() {
@@ -536,18 +546,15 @@ private class ChunkPlayer(private val firstChunkLoaded: Boolean = true) : Simple
             .setPlaylist(
                 listOf(
                     MediaItemData.Builder("first")
-                        .setMediaItem(
-                            MediaItem.Builder()
-                                .setMediaMetadata(
-                                    MediaMetadata.Builder()
-                                        .setExtras(Bundle().apply { putLong(KEY_MEASURED_DURATION_MS, FIRST_CHUNK_MS) })
-                                        .build()
-                                )
-                                .build()
-                        )
+                        .setMediaItem(chunkItem(startsAtMs = firstStartsAtMs))
                         .apply { if (firstChunkLoaded) setDurationUs(FIRST_CHUNK_MS * 1_000) }
                         .build(),
-                    MediaItemData.Builder("second").setDurationUs(SECOND_CHUNK_MS * 1_000).build(),
+                    MediaItemData.Builder("second")
+                        .setMediaItem(
+                            chunkItem(startsAtMs = firstStartsAtMs + FIRST_CHUNK_MS, lengthMs = SECOND_CHUNK_MS)
+                        )
+                        .setDurationUs(SECOND_CHUNK_MS * 1_000)
+                        .build(),
                 )
             )
             .setCurrentMediaItemIndex(1)
@@ -584,9 +591,17 @@ private class ChunkPlayer(private val firstChunkLoaded: Boolean = true) : Simple
         startPositionMs: Long,
     ): ListenableFuture<*> {
         startPositions.add(startPositionMs)
+        mediaItems.firstOrNull()?.let { firstStartsAtMs = it.startsAt().inWholeMilliseconds }
         return Futures.immediateVoidFuture()
     }
 }
+
+/** A chunk's item, as the controller hands it to the session, starting [startsAtMs] into the article. */
+private fun chunkItem(startsAtMs: Long, lengthMs: Long = FIRST_CHUNK_MS) =
+    PlayableItem(0, File("chunk"), startsAtMs.milliseconds, lengthMs.milliseconds).toMediaItem(ArticleDisplayData())
+
+/** Where a test's playlist starts in the article, and how long the article is shown to last. */
+private data class Placement(val playlistStartMs: Long = 0, val durationMs: Long = 0)
 
 private const val FIRST_CHUNK_MS = 40_000L
 private const val SECOND_CHUNK_MS = 30_000L

@@ -9,6 +9,7 @@ import android.speech.tts.Voice as TtsVoice
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import java.util.Locale
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -17,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.test.runTest
-import mozilla.components.feature.listentopage.playback.DirectoryAudioFileCache
+import mozilla.components.feature.listentopage.synthesis.audio.DirectoryAudioFileCache
 import mozilla.components.feature.listentopage.voices.Voice
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.After
@@ -36,6 +37,9 @@ private const val NOT_INSTALLED = TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED
 
 // There is no Locale constant for it, and it is the third English region the tests need.
 private val AUSTRALIA: Locale = Locale.forLanguageTag("en-AU")
+
+// The engine Robolectric reports, which names no package because it has no engine installed.
+private const val ENGINE = ""
 
 @RunWith(AndroidJUnit4::class)
 class AndroidTtsSpeechSynthesizerTest {
@@ -70,7 +74,7 @@ class AndroidTtsSpeechSynthesizerTest {
 
         engineShadow().onInitListener.onInit(TextToSpeech.SUCCESS)
 
-        assertEquals(listOf(Voice("en-us-gonzo", Locale.US)), voices.await())
+        assertEquals(listOf(Voice("en-us-gonzo", Locale.US, engine = ENGINE)), voices.await())
     }
 
     @Test
@@ -102,7 +106,7 @@ class AndroidTtsSpeechSynthesizerTest {
         installVoice("en-us-absent", Locale.US, features = setOf(NOT_INSTALLED))
 
         assertEquals(
-            listOf(Voice(id = "en-us-offline", locale = Locale.US)),
+            listOf(Voice(id = "en-us-offline", locale = Locale.US, engine = ENGINE)),
             startedSynthesizer().loadAvailableVoices("en-US"),
         )
     }
@@ -137,7 +141,7 @@ class AndroidTtsSpeechSynthesizerTest {
         installVoice("en-us-gonzo", Locale.US)
 
         assertEquals(
-            listOf(Voice(id = "en-us-gonzo", locale = Locale.US)),
+            listOf(Voice(id = "en-us-gonzo", locale = Locale.US, engine = ENGINE)),
             startedSynthesizer().loadAvailableVoices("en-GB"),
         )
     }
@@ -151,7 +155,7 @@ class AndroidTtsSpeechSynthesizerTest {
         installVoice("en-gb-good", Locale.UK, quality = TtsVoice.QUALITY_HIGH)
 
         assertEquals(
-            listOf(Voice("en-gb-good", Locale.UK), Voice("en-us-good", Locale.US)),
+            listOf(Voice("en-gb-good", Locale.UK, engine = ENGINE), Voice("en-us-good", Locale.US, engine = ENGINE)),
             startedSynthesizer().loadAvailableVoices("en-US"),
         )
     }
@@ -201,7 +205,10 @@ class AndroidTtsSpeechSynthesizerTest {
         installVoice("en-us-zeta", Locale.US)
         installVoice("en-us-alpha", Locale.US)
 
-        assertEquals(listOf(Voice("en-us-alpha", Locale.US)), startedSynthesizer().loadAvailableVoices("en-US"))
+        assertEquals(
+            listOf(Voice("en-us-alpha", Locale.US, engine = ENGINE)),
+            startedSynthesizer().loadAvailableVoices("en-US"),
+        )
     }
 
     @Test
@@ -210,7 +217,7 @@ class AndroidTtsSpeechSynthesizerTest {
         installVoice("en-gb-alpha", Locale.UK)
 
         assertEquals(
-            listOf(Voice("en-gb-alpha", Locale.UK), Voice("en-us-zeta", Locale.US)),
+            listOf(Voice("en-gb-alpha", Locale.UK, engine = ENGINE), Voice("en-us-zeta", Locale.US, engine = ENGINE)),
             startedSynthesizer().loadAvailableVoices("en-US"),
         )
     }
@@ -222,7 +229,7 @@ class AndroidTtsSpeechSynthesizerTest {
         installVoice("spa-mex", alpha3Locale("spa", "MEX", "default"))
 
         assertEquals(
-            listOf(Voice("eng-gbr", Locale.UK), Voice("eng-usa", Locale.US)),
+            listOf(Voice("eng-gbr", Locale.UK, engine = ENGINE), Voice("eng-usa", Locale.US, engine = ENGINE)),
             startedSynthesizer().loadAvailableVoices("en-US"),
         )
     }
@@ -233,7 +240,7 @@ class AndroidTtsSpeechSynthesizerTest {
         installVoice("por-bra-default", alpha3Locale("por", "BRA", "default"))
 
         assertEquals(
-            listOf(Voice("por-bra-f00", Locale.forLanguageTag("pt-BR"))),
+            listOf(Voice("por-bra-f00", Locale.forLanguageTag("pt-BR"), engine = ENGINE)),
             startedSynthesizer().loadAvailableVoices("pt-PT"),
         )
     }
@@ -249,9 +256,9 @@ class AndroidTtsSpeechSynthesizerTest {
     fun `test that a voice the engine does not have leaves the one it is reading with alone`() = runTest {
         installVoice("en-us-gonzo", Locale.US)
         val synthesizer = synthesizerWith(engineStatus = TextToSpeech.SUCCESS)
-        synthesizer.setVoice(Voice("en-us-gonzo", Locale.US))
+        synthesizer.setVoice(Voice("en-us-gonzo", Locale.US, engine = ENGINE))
 
-        synthesizer.setVoice(Voice("en-us-uninstalled", Locale.US))
+        synthesizer.setVoice(Voice("en-us-uninstalled", Locale.US, engine = ENGINE))
 
         assertEquals("en-us-gonzo", engineShadow().currentVoice.name)
     }
@@ -440,6 +447,15 @@ class AndroidTtsSpeechSynthesizerTest {
      * The shadow reports [synthesisResult] through the utterance listener rather than from `synthesizeToFile`, which
      * always returns success. The path that rejects a failed return value therefore cannot be reached from here.
      */
+    @Test
+    fun `test that a voice of another engine is refused`() = runTest {
+        val synthesizer = startedSynthesizer()
+
+        assertFailsWith<IllegalArgumentException> {
+            synthesizer.setVoice(Voice("en-us-gonzo", Locale.US, engine = "com.example.other.tts"))
+        }
+    }
+
     private fun synthesizerWith(engineStatus: Int, synthesisResult: Int = TextToSpeech.SUCCESS): SpeechSynthesizer {
         val synthesizer = AndroidTtsSpeechSynthesizer(testContext, cache, Dispatchers.Unconfined)
 

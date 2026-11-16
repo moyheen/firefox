@@ -14,9 +14,9 @@ import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import mozilla.components.feature.listentopage.playback.KEY_MEASURED_DURATION_MS
 import mozilla.components.feature.listentopage.playback.SEEK_BACK_INCREMENT_MS
 import mozilla.components.feature.listentopage.playback.SEEK_FORWARD_INCREMENT_MS
+import mozilla.components.feature.listentopage.playback.length
 
 /**
  * A player that reads a playlist of chunks the way the ExoPlayer under [SessionPlayer] does, as far as the session and
@@ -143,8 +143,7 @@ internal class FakeChunkPlayer : SimpleBasePlayer(Looper.getMainLooper()) {
 
     private fun lengthOf(index: Int): Long = items.getOrNull(index)?.second?.let(::lengthOf) ?: 0
 
-    private fun lengthOf(item: MediaItem): Long =
-        item.mediaMetadata.extras?.getLong(KEY_MEASURED_DURATION_MS)?.takeIf { it > 0 } ?: DEFAULT_LENGTH_MS
+    private fun lengthOf(item: MediaItem): Long = item.length()?.inWholeMilliseconds ?: DEFAULT_LENGTH_MS
 
     private companion object {
         const val MICROS_PER_MILLI = 1_000L

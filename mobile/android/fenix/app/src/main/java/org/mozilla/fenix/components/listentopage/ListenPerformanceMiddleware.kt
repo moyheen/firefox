@@ -88,6 +88,7 @@ class ListenPerformanceMiddleware(
             }
 
             ListenAction.System.Content.ContentUnavailable,
+            is ListenAction.System.Voices.FallbackVoiceChosen,
             ListenAction.System.Voices.NoOfflineVoicesAvailable,
             ListenAction.System.Synthesis.SynthesisFailed,
             ListenAction.System.Playback.PlaybackFailed -> failAll(action)
@@ -119,7 +120,6 @@ class ListenPerformanceMiddleware(
             ListenAction.User.Controls.PlaybackSpeedClicked,
             ListenAction.User.Controls.PlaybackSpeedDismissed,
             is ListenAction.User.Controls.PlaybackSpeedSelected,
-            is ListenAction.System.Playback.ArticleProgressReverted,
             ListenAction.System.Playback.PlaybackEnded,
             is ListenAction.User.ModeChanged,
             ListenAction.User.ErrorDismissed -> Unit

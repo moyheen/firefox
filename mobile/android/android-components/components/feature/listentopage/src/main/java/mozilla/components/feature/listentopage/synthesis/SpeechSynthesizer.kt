@@ -23,8 +23,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import mozilla.components.feature.listentopage.playback.AudioFileCache
+import mozilla.components.feature.listentopage.synthesis.audio.AudioFileCache
 import mozilla.components.feature.listentopage.voices.Voice
+import mozilla.components.support.base.log.logger.Logger
 
 /** Type that is used to manage the synthesis of speech from text. */
 interface SpeechSynthesizer {
@@ -46,6 +47,8 @@ interface SpeechSynthesizer {
      * Reads everything synthesized from here on in [voice], which has to be one [loadAvailableVoices] returned.
      *
      * The engine keeps the voice it was last given, so audio already made stays in the voice it was made with.
+     *
+     * @throws IllegalArgumentException if [voice] belongs to another engine, whose voice ids mean nothing to this one.
      */
     suspend fun setVoice(voice: Voice)
 
@@ -92,12 +95,17 @@ internal class AndroidTtsSpeechSynthesizer(
     private val audioCache: AudioFileCache,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : SpeechSynthesizer {
+    private val logger = Logger("AndroidTtsSpeechSynthesizer")
 
     // The engine binds asynchronously. Without waiting for the callback the first request always fails, so the wait
     // lives inside the first request rather than in a prepare() a caller could forget.
     private val started = CompletableDeferred<Int>()
 
     private val tts = TextToSpeech(context) { status -> started.complete(status) }
+
+    // The engine this instance bound to, which is the system default when it was built. Read once, so that a default
+    // changed later in the system settings is not taken for the engine this instance reads with.
+    override val enginePackageName: String = tts.defaultEngine.orEmpty()
 
     // The requests the engine is working on, by utterance id. The engine keeps one listener for all of them, so the
     // listener cannot belong to a request: setting it per request drops the callbacks of the request before it and
@@ -130,9 +138,6 @@ internal class AndroidTtsSpeechSynthesizer(
     override val maxInputLength: Int
         get() = TextToSpeech.getMaxSpeechInputLength()
 
-    override val enginePackageName: String
-        get() = tts.defaultEngine
-
     override suspend fun synthesizeToFile(text: String): File {
         val status = started.await()
         if (status != TextToSpeech.SUCCESS) {
@@ -162,11 +167,19 @@ internal class AndroidTtsSpeechSynthesizer(
     }
 
     override suspend fun setVoice(voice: Voice) {
+        require(voice.engine == enginePackageName) {
+            "Voice ${voice.id} belongs to ${voice.engine}, not to $enginePackageName"
+        }
         if (started.await() != TextToSpeech.SUCCESS) {
             return
         }
 
-        runCatching { tts.voices }.getOrNull().orEmpty().firstOrNull { it.name == voice.id }?.let(tts::setVoice)
+        val engineVoice = runCatching { tts.voices }.getOrNull().orEmpty().firstOrNull { it.name == voice.id }
+        if (engineVoice == null) {
+            logger.warn("The engine no longer has voice ${voice.id}, so it reads on in the voice it had")
+            return
+        }
+        tts.setVoice(engineVoice)
     }
 
     /*
@@ -196,7 +209,7 @@ internal class AndroidTtsSpeechSynthesizer(
             // The engines ship several near-identical voices per region, which would fill the list with rows the user
             // cannot tell apart, so each region is offered only by its best.
             .distinctBy { offlineVoices.getValue(it) }
-            .map { Voice(id = it.name, locale = offlineVoices.getValue(it)) }
+            .map { Voice(id = it.name, locale = offlineVoices.getValue(it), engine = enginePackageName) }
     }
 
     /**

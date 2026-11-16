@@ -4,6 +4,10 @@
 
 package mozilla.components.feature.listentopage.settings
 
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.preferencesOf
+import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.IOException
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -31,60 +35,82 @@ class ListenSettingsTest {
     fun `test that a language with no saved voice reads back as null`() = runTest {
         val settings = DataStoreBackedSettings(FakePreferencesDataStore(), available = true, scope = backgroundScope)
 
-        assertNull(settings.getSelectedVoiceId("en-US"))
+        assertNull(settings.getSelectedVoiceId(ENGINE, "en-US"))
     }
 
     @Test
     fun `test that the voice of each language is saved and read back on its own`() = runTest {
         val settings = DataStoreBackedSettings(FakePreferencesDataStore(), available = true, scope = backgroundScope)
-        settings.setSelectedVoiceId("en-US", "en-us-female")
-        settings.setSelectedVoiceId("fr-FR", "fr-fr-male")
+        settings.setSelectedVoiceId(ENGINE, "en-US", "en-us-female")
+        settings.setSelectedVoiceId(ENGINE, "fr-FR", "fr-fr-male")
 
-        assertEquals("en-us-female", settings.getSelectedVoiceId("en-US"))
-        assertEquals("fr-fr-male", settings.getSelectedVoiceId("fr-FR"))
+        assertEquals("en-us-female", settings.getSelectedVoiceId(ENGINE, "en-US"))
+        assertEquals("fr-fr-male", settings.getSelectedVoiceId(ENGINE, "fr-FR"))
     }
 
     @Test
     fun `test that saving a voice for a language replaces the one saved before it`() = runTest {
         val settings = DataStoreBackedSettings(FakePreferencesDataStore(), available = true, scope = backgroundScope)
-        settings.setSelectedVoiceId("en-US", "en-us-female")
-        settings.setSelectedVoiceId("en-US", "en-us-male")
+        settings.setSelectedVoiceId(ENGINE, "en-US", "en-us-female")
+        settings.setSelectedVoiceId(ENGINE, "en-US", "en-us-male")
 
-        assertEquals("en-us-male", settings.getSelectedVoiceId("en-US"))
+        assertEquals("en-us-male", settings.getSelectedVoiceId(ENGINE, "en-US"))
     }
 
     @Test
-    fun `test that every voice is cleared when engine package is changed`() = runTest {
+    fun `test that each engine keeps its own voices`() = runTest {
         val settings = DataStoreBackedSettings(FakePreferencesDataStore(), available = true, scope = backgroundScope)
-        settings.clearSavedVoicesOnEngineChange(ENGINE)
-        settings.setSelectedVoiceId("en-US", "en-us-female")
-        settings.setSelectedVoiceId("fr-FR", "fr-fr-male")
+        settings.setSelectedVoiceId(ENGINE, "en-US", "en-us-female")
+        settings.setSelectedVoiceId(OTHER_ENGINE, "en-US", "en-us-other")
 
-        settings.clearSavedVoicesOnEngineChange(OTHER_ENGINE)
-
-        assertNull(settings.getSelectedVoiceId("en-US"))
-        assertNull(settings.getSelectedVoiceId("fr-FR"))
+        assertEquals("en-us-female", settings.getSelectedVoiceId(ENGINE, "en-US"))
+        assertEquals("en-us-other", settings.getSelectedVoiceId(OTHER_ENGINE, "en-US"))
     }
 
     @Test
-    fun `test that the saved voices survive an engine that has not changed`() = runTest {
-        val settings = DataStoreBackedSettings(FakePreferencesDataStore(), available = true, scope = backgroundScope)
-        settings.clearSavedVoicesOnEngineChange(ENGINE)
-        settings.setSelectedVoiceId("en-US", "en-us-female")
+    fun `test that the choices of the one engine kept before move under that engine`() = runTest {
+        val old =
+            preferencesOf(
+                stringPreferencesKey("engine_package_name_key") to ENGINE,
+                stringPreferencesKey("selected_voice_en") to "en-us-female",
+                stringPreferencesKey("selected_voice_fr") to "fr-fr-male",
+            )
 
-        settings.clearSavedVoicesOnEngineChange(ENGINE)
+        assertTrue(EngineScopedVoicesMigration.shouldMigrate(old))
+        val migrated = EngineScopedVoicesMigration.migrate(old)
 
-        assertEquals("en-us-female", settings.getSelectedVoiceId("en-US"))
+        assertEquals(
+            preferencesOf(
+                selectedVoiceKey(ENGINE, "en") to "en-us-female",
+                selectedVoiceKey(ENGINE, "fr") to "fr-fr-male",
+            ),
+            migrated,
+        )
     }
 
     @Test
-    fun `test that voices saved before any engine was recorded are cleared by the first one`() = runTest {
-        val settings = DataStoreBackedSettings(FakePreferencesDataStore(), available = true, scope = backgroundScope)
-        settings.setSelectedVoiceId("en-US", "en-us-female")
+    fun `test that choices saved with no engine recorded are dropped by the migration`() = runTest {
+        val old = preferencesOf(stringPreferencesKey("selected_voice_en") to "en-us-female")
 
-        settings.clearSavedVoicesOnEngineChange(ENGINE)
+        assertEquals(emptyPreferences(), EngineScopedVoicesMigration.migrate(old))
+    }
 
-        assertNull(settings.getSelectedVoiceId("en-US"))
+    @Test
+    fun `test that an engine recorded with no choices is dropped by the migration`() = runTest {
+        val old = preferencesOf(stringPreferencesKey("engine_package_name_key") to ENGINE)
+
+        assertEquals(emptyPreferences(), EngineScopedVoicesMigration.migrate(old))
+    }
+
+    @Test
+    fun `test that migrated choices and other settings are left alone`() = runTest {
+        val current =
+            preferencesOf(
+                selectedVoiceKey(ENGINE, "en") to "en-us-female",
+                booleanPreferencesKey("enabled_key") to true,
+            )
+
+        assertFalse(EngineScopedVoicesMigration.shouldMigrate(current))
     }
 
     @Test

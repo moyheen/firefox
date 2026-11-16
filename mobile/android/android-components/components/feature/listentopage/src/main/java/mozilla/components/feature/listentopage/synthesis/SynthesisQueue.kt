@@ -6,26 +6,19 @@ package mozilla.components.feature.listentopage.synthesis
 
 import android.os.SystemClock
 import java.io.File
-import kotlin.math.roundToLong
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import mozilla.components.feature.listentopage.NO_CHUNK
-import mozilla.components.feature.listentopage.content.TextChunker
-import mozilla.components.feature.listentopage.facts.ListenToPageFacts
-import mozilla.components.feature.listentopage.facts.emitChunkSynthesizedFact
 import mozilla.components.feature.listentopage.facts.emitOpeningSynthesisStartedFact
-import mozilla.components.feature.listentopage.playback.ChunkAudio
-import mozilla.components.feature.listentopage.playback.audioWindow
-
-/** Thrown when the article holds nothing that can be read out loud. */
-internal class NothingToReadException : Exception("The article has no words to read out")
+import mozilla.components.feature.listentopage.synthesis.audio.ChunkFiles
+import mozilla.components.feature.listentopage.synthesis.audio.readWavDurationOrNull
+import mozilla.components.support.base.log.logger.Logger
 
 /**
  * Decides which piece of the article the engine works on next, and keeps the audio of the pieces around the one playing
- * on disk.
+ * on disk. It keeps no copy of how long each piece lasts: each length is reported through [onMeasured].
  *
  * @param synthesizer The engine. Its input limit caps every request.
  * @param audio Where the audio of each chunk is kept and thrown away.
@@ -37,20 +30,21 @@ internal class NothingToReadException : Exception("The article has no words to r
  * @param onMeasured Called with each chunk once it has been made and measured.
  */
 internal class SynthesisQueue(
-    private val synthesizer: SpeechSynthesizer,
-    private val audio: ChunkAudio,
-    private val chunker: TextChunker,
+    synthesizer: SpeechSynthesizer,
+    private val audio: ChunkFiles,
+    chunker: TextChunker,
     private val workDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val measureAudio: suspend (File) -> Duration? = { readWavDurationOrNull(it) },
-    private val elapsedMs: () -> Long = SystemClock::elapsedRealtime,
-    private val onMeasured: (index: Int, duration: Duration) -> Unit = { _, _ -> },
+    measureAudio: suspend (File) -> Duration? = { readWavDurationOrNull(it) },
+    elapsedMs: () -> Long = SystemClock::elapsedRealtime,
+    private val onMeasured: (index: Int, length: Duration) -> Unit = { _, _ -> },
 ) {
+    private val logger = Logger("SynthesisQueue")
+
+    private val articleChunker = ArticleChunker(chunker, synthesizer.maxInputLength)
+
+    private val chunkSynthesizer = ChunkSynthesizer(synthesizer, workDispatcher, measureAudio, elapsedMs)
 
     private var chunks: List<String> = emptyList()
-
-    // How long each chunk made so far lasts. Each one is also reported through onMeasured, so that the store's copy
-    // of it stays the same.
-    private val measured = mutableMapOf<Int, Duration>()
 
     /** How many pieces the article came to, or `0` until [startReading] has run. */
     val chunkCount: Int
@@ -60,18 +54,7 @@ internal class SynthesisQueue(
     var speechRate: SpeechRate? = null
         private set
 
-    /**
-     * How long chunk [index] lasts, or `null` while it has not been measured.
-     *
-     * A chunk can have audio and no duration, because the file is added before it is read, so this being `null` does
-     * not mean [fileFor] is too. Size such a chunk from [charactersIn] and [speechRate] instead.
-     */
-    fun durationOf(index: Int): Duration? = measured[index]
-
-    /** [durationOf] in milliseconds, as the player takes it. */
-    fun durationMs(index: Int): Long? = durationOf(index)?.inWholeMilliseconds
-
-    /** The characters in chunk [index], for sizing one that has no measured duration. */
+    /** The characters in chunk [index], for sizing one that has no measured length. */
     fun charactersIn(index: Int): Int = chunks[index].length
 
     /**
@@ -86,37 +69,21 @@ internal class SynthesisQueue(
      *   and the session has failed.
      */
     suspend fun startReading(text: String, languageTag: String): File {
-        val split =
-            withContext(workDispatcher) { chunker.splitFirstSentence(text, languageTag, synthesizer.maxInputLength) }
-        val opening = split.firstChunks.firstOrNull() ?: throw NothingToReadException()
+        val (opening, split) = withContext(workDispatcher) { articleChunker.splitOpening(text, languageTag) }
 
         emitOpeningSynthesisStartedFact()
-        val startedAt = elapsedMs()
-        val file = synthesizer.synthesizeToFile(opening)
-        val synthesisMs = elapsedMs() - startedAt
-        audio.add(0, file)
+        val (made, synthesisMs) = chunkSynthesizer.make(0, opening) { audio.add(0, it) }
+        reportLength(made)
 
-        // A file the system reclaimed, and one an interrupted request left behind, both measure as no audio at all.
-        // That is not a rate, so it has to read the same as a file whose header could not be understood.
-        val audioLength = measure(0, file)
-        emitChunkSynthesizedFact(
-            ListenToPageFacts.ChunkSynthesis(
-                index = 0,
-                length = opening.length,
-                synthesisMs = synthesisMs,
-                audioMs = audioLength?.inWholeMilliseconds,
-                fileKilobytes = kilobytesOf(file),
-            )
-        )
-        val rate = audioLength?.let { SpeechRate.measuredFrom(opening.length, it) }
+        val rate = made.length?.let { SpeechRate.measuredFrom(opening.length, it) }
         speechRate = rate
 
         chunks =
             withContext(workDispatcher) {
-                listOf(opening) + chunksAfterOpening(split, languageTag, rate, audioLength, synthesisMs)
+                listOf(opening) + articleChunker.chunksAfterOpening(split, languageTag, rate, made.length, synthesisMs)
             }
 
-        return file
+        return made.file
     }
 
     /**
@@ -135,12 +102,12 @@ internal class SynthesisQueue(
      * Moves the window of chunks kept on disk to sit around [playingChunkIndex], making what it is missing and throwing
      * away what has fallen outside it.
      *
-     * @param lastQueuedChunkIndex The index of the last chunk already handed to the player. Chunks up to it are kept
-     *   even past the window, and deleting what it leaves behind ahead of the player would stop playback when it
-     *   reached the missing file.
-     * @param seekingToChunkIndex The index of the chunk a seek is moving the player into, or [NO_CHUNK]. It is kept
-     *   even outside the window, which still sits around where the player last reported it was, so that its audio is
-     *   there when the player gets to it.
+     * @param lastQueuedChunkIndex The index of the last chunk already handed to the player, or `null`. Chunks up to it
+     *   are kept even past the window, and deleting what it leaves behind ahead of the player would stop playback when
+     *   it reached the missing file.
+     * @param seekingToChunkIndex The index of the chunk a seek is moving the player into, or `null`. It is kept even
+     *   outside the window, which still sits around where the player last reported it was, so that its audio is there
+     *   when the player gets to it.
      * @param onChunkMade Called with each chunk's index as soon as it is made, so that it can be queued without waiting
      *   for the rest.
      * @throws SpeechSynthesisException if the engine cannot make one of them. What was made before it stays, so
@@ -149,23 +116,55 @@ internal class SynthesisQueue(
      */
     suspend fun moveWindowTo(
         playingChunkIndex: Int,
-        lastQueuedChunkIndex: Int = NO_CHUNK,
-        seekingToChunkIndex: Int = NO_CHUNK,
+        lastQueuedChunkIndex: Int? = null,
+        seekingToChunkIndex: Int? = null,
         onChunkMade: suspend (chunkIndex: Int) -> Unit = {},
     ) {
-        val window = audioWindow(playingChunkIndex, chunks.size)
+        audio.keepOnly(keptChunks(playingChunkIndex, chunks.size, lastQueuedChunkIndex, seekingToChunkIndex))
 
-        // The chunks handed to the player, and the chunk a seek is moving into, are kept even outside the window.
-        val keepFrom = if (seekingToChunkIndex == NO_CHUNK) window.first else minOf(window.first, seekingToChunkIndex)
-        val keepTo = maxOf(window.last, lastQueuedChunkIndex, seekingToChunkIndex)
-        audio.keepOnly(keepFrom..keepTo)
-
-        // The chunks ahead first, since the player reaches them next, and the ones it has passed after.
-        for (index in (playingChunkIndex..window.last) + (playingChunkIndex - 1 downTo window.first)) {
+        for (index in makeOrder(playingChunkIndex, chunks.size)) {
             if (audio.fileFor(index) != null) continue
 
             make(index)
             onChunkMade(index)
+        }
+    }
+
+    /**
+     * [moveWindowTo], without reporting what it fails with.
+     *
+     * The chunk a reader is waiting on is made by [audioFor], which does report a failure. A chunk further ahead than
+     * that is made again when playback reaches it, so failing to work ahead is not the session's failure and must not
+     * put an error over a player that is still reading the article out.
+     */
+    suspend fun makeAround(
+        playingChunkIndex: Int,
+        lastQueuedChunkIndex: Int?,
+        seekingToChunkIndex: Int?,
+        onChunkMade: suspend (chunkIndex: Int) -> Unit,
+    ) {
+        try {
+            moveWindowTo(playingChunkIndex, lastQueuedChunkIndex, seekingToChunkIndex, onChunkMade)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            logger.warn("Could not work ahead on the article", e)
+        }
+    }
+
+    /**
+     * Makes the chunk at [chunkIndex] ahead of a seek, if the article has one. A chunk that fails is not the seek's
+     * failure: it is made again when playback reaches it.
+     */
+    suspend fun makeNext(chunkIndex: Int) {
+        if (chunkIndex >= chunkCount) return
+
+        try {
+            audioFor(chunkIndex)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+            logger.warn("Could not make the chunk after a seek", e)
         }
     }
 
@@ -180,135 +179,19 @@ internal class SynthesisQueue(
     /** Throws away every chunk's audio and forgets the article. */
     suspend fun clear() {
         chunks = emptyList()
-        measured.clear()
         speechRate = null
         audio.clear()
     }
 
-    /**
-     * Makes chunk [index] and measures what came back. The one place a chunk is made, so neither caller can skip it.
-     */
+    /** Makes chunk [index]. The one place a chunk is made after the opening, so neither caller can skip it. */
     private suspend fun make(index: Int): File {
-        val chunk = chunks[index]
-        val startedAt = elapsedMs()
-        val file = synthesizer.synthesizeToFile(chunk)
-        val synthesisMs = elapsedMs() - startedAt
-        audio.add(index, file)
-        val audioLength = measure(index, file)
-        emitChunkSynthesizedFact(
-            ListenToPageFacts.ChunkSynthesis(
-                index = index,
-                length = chunk.length,
-                synthesisMs = synthesisMs,
-                audioMs = audioLength?.inWholeMilliseconds,
-                fileKilobytes = kilobytesOf(file),
-            )
-        )
-
-        return file
+        val (made, _) = chunkSynthesizer.make(index, chunks[index]) { audio.add(index, it) }
+        reportLength(made)
+        return made.file
     }
 
-    /**
-     * Records how long the audio in [file] lasts, and reports it.
-     *
-     * A file the system reclaimed, and one an interrupted request left behind, both measure as no audio at all. That is
-     * not a duration, so it has to read the same as a file whose header could not be understood.
-     */
-    private suspend fun measure(index: Int, file: File): Duration? =
-        withContext(workDispatcher) { measureAudio(file) }
-            ?.takeIf { it > Duration.ZERO }
-            ?.also {
-                measured[index] = it
-                onMeasured(index, it)
-            }
-
-    /** How many kilobytes on disk are taken by [file], or `null` if the file is empty or gone. */
-    private suspend fun kilobytesOf(file: File): Long? =
-        withContext(workDispatcher) { file.length() }.takeIf { it > 0 }?.let { (it / BYTES_PER_KILOBYTE).roundToLong() }
-
-    /**
-     * The article after its opening, in chunks of [CHUNK_TARGET], growing up to it from what this device managed while
-     * the opening played.
-     */
-    private fun chunksAfterOpening(
-        split: SplitArticle,
-        languageTag: String,
-        rate: SpeechRate?,
-        openingLength: Duration?,
-        synthesisMs: Long,
-    ): List<String> {
-        val rest =
-            split.firstChunks.drop(1).flatMap { chunksOf(it, languageTag, rate) } +
-                chunksOf(split.remainingText, languageTag, rate)
-
-        val firstTarget = firstChunkTarget(openingLength, synthesisMs)
-        if (rate == null || firstTarget == null || rest.isEmpty()) {
-            return rest
-        }
-
-        return growingChunksOf(rest.first(), languageTag, rate, firstTarget) + rest.drop(1)
-    }
-
-    /** The chunks of [text] at [rate], within whatever the engine accepts in one request. */
-    private fun chunksOf(text: String, languageTag: String, rate: SpeechRate?) =
-        if (rate == null) {
-            chunker.chunk(text, synthesizer.maxInputLength, languageTag)
-        } else {
-            chunker.chunkByDuration(text, languageTag, rate, synthesizer.maxInputLength)
-        }
-
-    /** [chunk] cut into pieces that grow from [firstTarget] towards [CHUNK_TARGET], doubling each time. */
-    private fun growingChunksOf(
-        chunk: String,
-        languageTag: String,
-        rate: SpeechRate,
-        firstTarget: Duration,
-    ): List<String> {
-        val growing = mutableListOf<String>()
-        var rest = chunk
-        var target = firstTarget
-
-        while (rest.isNotEmpty() && target < CHUNK_TARGET) {
-            val piece =
-                chunker.chunkByDuration(rest, languageTag, rate, synthesizer.maxInputLength, target).firstOrNull()
-                    ?: break
-            val remainder = rest.removePrefix(piece).trimStart()
-
-            // A piece holding all that is left, or one the chunker did not take off the front, stops the growing. What
-            // is left then goes out whole rather than being cut again, so that no part of the article is dropped.
-            if (remainder.isEmpty() || remainder.length == rest.length) break
-
-            growing += piece
-            rest = remainder
-            target *= 2
-        }
-
-        return if (rest.isEmpty()) growing else growing + rest
-    }
-
-    /**
-     * How long the first chunk after the opening should be, or `null` to let it have the full [CHUNK_TARGET].
-     *
-     * It is the audio this device produced while the opening played, so the chunk after the opening is one the device
-     * has shown it can make in time. Every chunk after it grows from here.
-     */
-    private fun firstChunkTarget(playedFor: Duration?, synthesisTookMs: Long): Duration? {
-        if (playedFor == null || synthesisTookMs <= 0) {
-            return null
-        }
-
-        val producedPerMs = playedFor.inWholeMilliseconds.toDouble() / synthesisTookMs
-
-        return (playedFor * producedPerMs).coerceAtLeast(MIN_FIRST_TARGET).takeIf { it < CHUNK_TARGET }
-    }
-
-    private companion object {
-        const val BYTES_PER_KILOBYTE = 1024.0
-
-        // A floor under the first chunk, so that an engine which measured badly does not start on a chunk of a word or
-        // two and spend more of the article growing than reading.
-        val MIN_FIRST_TARGET = 5.seconds
+    /** Reports how long [made] lasts, when it could be measured. */
+    private fun reportLength(made: ChunkAudio) {
+        made.length?.let { onMeasured(made.index, it) }
     }
 }
-
-private fun readWavDurationOrNull(file: File): Duration? = runCatching { readWavAudio(file) }.getOrNull()?.duration

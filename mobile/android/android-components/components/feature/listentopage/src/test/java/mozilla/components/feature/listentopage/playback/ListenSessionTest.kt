@@ -7,6 +7,8 @@ package mozilla.components.feature.listentopage.playback
 import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
+import kotlin.time.Duration.Companion.ZERO
+import kotlin.time.Duration.Companion.milliseconds
 import mozilla.components.feature.listentopage.playback.ListenSessionHarness.Companion.chunk
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -30,31 +32,31 @@ class ListenSessionTest {
     @Test
     fun `test that the status reports where in the article the player is, across its items`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
-        listen.run { enqueue(chunk(1, 20_000)) }
+        listen.run { enqueue(chunk(1, 20_000, startsAtMs = 10_000)) }
 
         listen.player.play(15_000)
         listen.idle()
 
         val status = listen.controller.status.value
         assertEquals(PlaybackPhase.Playing, status.phase)
-        assertEquals(1, status.chunk.index)
-        assertEquals(15_000L, status.positionMs)
+        assertEquals(1, status.chunkIndex)
+        assertEquals(15_000L, status.position.inWholeMilliseconds)
     }
 
     @Test
     fun `test that a restart starts the player at the position into its chunk`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
 
-        listen.run { restartAt(chunk(5, 20_000), chunkStartMs = 75_000, positionMs = 80_000) }
+        listen.run { restartAt(chunk(5, 20_000, startsAtMs = 75_000), position = 80_000.milliseconds) }
 
         assertEquals(5_000L, listen.player.startPositions.last())
-        assertEquals(80_000L, listen.controller.status.value.positionMs)
+        assertEquals(80_000L, listen.controller.status.value.position.inWholeMilliseconds)
     }
 
     @Test
     fun `test that a released article is not shown at the place of its playlist to the next one`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
-        listen.run { restartAt(chunk(5, 20_000), chunkStartMs = 75_000, positionMs = 80_000) }
+        listen.run { restartAt(chunk(5, 20_000, startsAtMs = 75_000), position = 80_000.milliseconds) }
 
         listen.run { release() }
         listen.idle()
@@ -66,21 +68,21 @@ class ListenSessionTest {
     @Test
     fun `test that a seek into a queued item moves the player to the position into that item`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
-        listen.run { enqueue(chunk(1, 20_000)) }
+        listen.run { enqueue(chunk(1, 20_000, startsAtMs = 10_000)) }
 
-        listen.run { seekTo(chunkIndex = 1, positionMs = 13_000) }
+        listen.run { seekTo(chunkIndex = 1, position = 13_000.milliseconds) }
 
         assertEquals(1 to 3_000L, listen.player.seeks.last())
-        assertEquals(13_000L, listen.controller.status.value.positionMs)
+        assertEquals(13_000L, listen.controller.status.value.position.inWholeMilliseconds)
     }
 
     @Test
     fun `test that a seek after a restart moves the player to the item holding the chunk asked for`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
-        listen.run { restartAt(chunk(5, 20_000), chunkStartMs = 75_000, positionMs = 80_000) }
-        listen.run { enqueue(chunk(6, 20_000)) }
+        listen.run { restartAt(chunk(5, 20_000, startsAtMs = 75_000), position = 80_000.milliseconds) }
+        listen.run { enqueue(chunk(6, 20_000, startsAtMs = 95_000)) }
 
-        listen.run { seekTo(chunkIndex = 6, positionMs = 100_000) }
+        listen.run { seekTo(chunkIndex = 6, position = 100_000.milliseconds) }
 
         assertEquals(1 to 5_000L, listen.player.seeks.last())
     }
@@ -90,7 +92,7 @@ class ListenSessionTest {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
         val seeksBefore = listen.player.seeks.size
 
-        val hasChunk = listen.run { seekTo(chunkIndex = 3, positionMs = 40_000) }
+        val hasChunk = listen.run { seekTo(chunkIndex = 3, position = 40_000.milliseconds) }
 
         assertFalse(hasChunk)
         assertEquals(seeksBefore, listen.player.seeks.size)
@@ -100,23 +102,27 @@ class ListenSessionTest {
     @Test
     fun `test that a chunk is reported with the length it was measured at, or none, never the article's`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
-        listen.run { setArticleDuration(300_000) }
-        assertEquals(10_000L, listen.controller.status.value.chunk.durationMs)
+        listen.run { setArticleDuration(300_000.milliseconds) }
+        assertEquals(10_000L, listen.controller.status.value.chunkLength?.inWholeMilliseconds)
 
         listen.run {
-            startArticle(ChunkFile(0, File("/chunks/unmeasured.wav"), durationMs = null), ArticleDisplayData(), TAB_ID)
+            startArticle(
+                PlayableItem(0, File("/chunks/unmeasured.wav"), startsAt = ZERO, length = ZERO),
+                ArticleDisplayData(),
+                TAB_ID,
+            )
         }
-        listen.run { setArticleDuration(300_000) }
+        listen.run { setArticleDuration(300_000.milliseconds) }
 
-        assertNull(listen.controller.status.value.chunk.durationMs)
+        assertNull(listen.controller.status.value.chunkLength?.inWholeMilliseconds)
     }
 
     @Test
     fun `test that what the player reports names the chunk of the article, not the item of its playlist`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
-        listen.run { restartAt(chunk(5, 20_000), chunkStartMs = 75_000, positionMs = 80_000) }
+        listen.run { restartAt(chunk(5, 20_000, startsAtMs = 75_000), position = 80_000.milliseconds) }
 
-        assertEquals(5, listen.controller.status.value.chunk.index)
+        assertEquals(5, listen.controller.status.value.chunkIndex)
     }
 
     @Test
@@ -126,18 +132,18 @@ class ListenSessionTest {
         listen.idle()
         assertEquals(PlaybackPhase.Ended, listen.controller.status.value.phase)
 
-        listen.run { enqueue(chunk(1, 20_000)) }
+        listen.run { enqueue(chunk(1, 20_000, startsAtMs = 10_000)) }
 
         assertEquals(1 to 0L, listen.player.seeks.last())
         assertEquals(PlaybackPhase.Playing, listen.controller.status.value.phase)
-        assertEquals(10_000L, listen.controller.status.value.positionMs)
+        assertEquals(10_000L, listen.controller.status.value.position.inWholeMilliseconds)
     }
 
     @Test
     fun `test that audio queued while the playback goes on leaves the player where it is`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
 
-        listen.run { enqueue(chunk(1, 20_000)) }
+        listen.run { enqueue(chunk(1, 20_000, startsAtMs = 10_000)) }
 
         assertTrue("the player was moved", listen.player.seeks.isEmpty())
     }
@@ -147,18 +153,18 @@ class ListenSessionTest {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
         listen.notification
 
-        listen.run { stopAndBufferAt(200_000) }
+        listen.run { stopAndBufferAt(200_000.milliseconds) }
 
         assertEquals(1, listen.player.stops)
         assertEquals(PlaybackPhase.Buffering, listen.controller.status.value.phase)
-        assertEquals(200_000L, listen.controller.status.value.positionMs)
+        assertEquals(200_000L, listen.controller.status.value.position.inWholeMilliseconds)
         assertEquals(200_000L, listen.notification.currentPosition)
 
-        listen.run { restartAt(chunk(9, 20_000), chunkStartMs = 190_000, positionMs = 200_000) }
+        listen.run { restartAt(chunk(9, 20_000, startsAtMs = 190_000), position = 200_000.milliseconds) }
 
         assertEquals(10_000L, listen.player.startPositions.last())
         assertEquals(PlaybackPhase.Playing, listen.controller.status.value.phase)
-        assertEquals(200_000L, listen.controller.status.value.positionMs)
+        assertEquals(200_000L, listen.controller.status.value.position.inWholeMilliseconds)
         assertFalse(
             "the notification was told the player stopped, which takes it away",
             Player.STATE_IDLE in listen.notificationStates,
@@ -168,32 +174,32 @@ class ListenSessionTest {
     @Test
     fun `test that a pause while buffering for a seek is kept once the playlist restarts`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
-        listen.run { stopAndBufferAt(200_000) }
+        listen.run { stopAndBufferAt(200_000.milliseconds) }
 
         listen.run { pause() }
 
         assertEquals(PlaybackPhase.Paused, listen.controller.status.value.phase)
-        assertEquals(200_000L, listen.controller.status.value.positionMs)
+        assertEquals(200_000L, listen.controller.status.value.position.inWholeMilliseconds)
 
-        listen.run { restartAt(chunk(9, 20_000), chunkStartMs = 190_000, positionMs = 200_000) }
+        listen.run { restartAt(chunk(9, 20_000, startsAtMs = 190_000), position = 200_000.milliseconds) }
 
         assertEquals(PlaybackPhase.Paused, listen.controller.status.value.phase)
-        assertEquals(200_000L, listen.controller.status.value.positionMs)
+        assertEquals(200_000L, listen.controller.status.value.position.inWholeMilliseconds)
     }
 
     @Test
     fun `test that a play while buffering for a seek does not play the playlist the seek left behind`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
         listen.run { pause() }
-        listen.run { stopAndBufferAt(200_000) }
+        listen.run { stopAndBufferAt(200_000.milliseconds) }
 
         listen.run { resume() }
 
         assertEquals("the old playlist was prepared again", Player.STATE_IDLE, listen.player.playbackState)
         assertEquals(PlaybackPhase.Buffering, listen.controller.status.value.phase)
-        assertEquals(200_000L, listen.controller.status.value.positionMs)
+        assertEquals(200_000L, listen.controller.status.value.position.inWholeMilliseconds)
 
-        listen.run { restartAt(chunk(9, 20_000), chunkStartMs = 190_000, positionMs = 200_000) }
+        listen.run { restartAt(chunk(9, 20_000, startsAtMs = 190_000), position = 200_000.milliseconds) }
 
         assertEquals(Player.STATE_READY, listen.player.playbackState)
         assertTrue("the play was lost", listen.player.playWhenReady)
@@ -228,14 +234,14 @@ class ListenSessionTest {
     fun `test that the notification is given the length of the article`() {
         listen.run { startArticle(chunk(0, 10_000), ArticleDisplayData(), TAB_ID) }
 
-        listen.run { setArticleDuration(300_000) }
+        listen.run { setArticleDuration(300_000.milliseconds) }
 
         assertEquals(300_000L, listen.notification.duration)
     }
 
     @Test
     fun `test that the length of the article is not given while nothing is connected`() {
-        listen.run { setArticleDuration(300_000) }
+        listen.run { setArticleDuration(300_000.milliseconds) }
 
         assertEquals("the playback was started to be given a length", 0, listen.connections)
     }

@@ -34,15 +34,15 @@ class SpeechRateTest {
 
     @Test
     fun `test that the duration of a piece of text follows the rate`() {
-        assertEquals(60L, SpeechRate(17.8).durationOf(1068).inWholeSeconds)
-        assertEquals(60L, SpeechRate(3.9).durationOf(234).inWholeSeconds)
+        assertEquals(60L, SpeechRate(17.8).timeToRead(1068).inWholeSeconds)
+        assertEquals(60L, SpeechRate(3.9).timeToRead(234).inWholeSeconds)
     }
 
     @Test
     fun `test that a duration converted to characters and back is unchanged`() {
         val rate = SpeechRate.measuredFrom(numChars = 1000, audioLength = 42.seconds)
 
-        assertEquals(1000, rate.charsIn(rate.durationOf(1000)))
+        assertEquals(1000, rate.charsIn(rate.timeToRead(1000)))
     }
 
     @Test

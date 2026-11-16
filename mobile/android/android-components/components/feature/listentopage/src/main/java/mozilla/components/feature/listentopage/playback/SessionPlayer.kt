@@ -38,7 +38,7 @@ internal class SessionPlayer(
     private var finishedAtMs: Long? = null
     private var isPlayPendingAfterFinish = false
 
-    /** Where the playlist sits in the article, how long the article lasts, and where a seek buffers. */
+    /** How long the article is shown to last, and where a seek buffers. */
     var articleTimeline = ArticleTimeline()
         private set(value) {
             field = value
@@ -89,7 +89,7 @@ internal class SessionPlayer(
         }
     }
 
-    /** The article is now estimated to last [durationMs]. */
+    /** The article is now shown to last [durationMs]. */
     fun setArticleDuration(durationMs: Long) {
         articleTimeline = articleTimeline.copy(durationMs = durationMs)
     }
@@ -120,7 +120,7 @@ internal class SessionPlayer(
             val shown = PositionSupplier.getConstant(shownMs)
             articleState.setContentPositionMs(shown).setContentBufferedPositionMs(shown)
         } else {
-            val startMs = articleTimeline.chunkStartMs(player)
+            val startMs = currentStartMs()
             articleState
                 .setContentPositionMs { startMs + state.contentPositionMsSupplier.get() }
                 .setContentBufferedPositionMs { startMs + state.contentBufferedPositionMsSupplier.get() }
@@ -129,7 +129,7 @@ internal class SessionPlayer(
         if (state.hasPositionDiscontinuity) {
             articleState.setPositionDiscontinuity(
                 state.positionDiscontinuityReason,
-                articleTimeline.chunkStartMs(player) + state.discontinuityPositionMs,
+                currentStartMs() + state.discontinuityPositionMs,
             )
         }
 
@@ -178,7 +178,7 @@ internal class SessionPlayer(
                     if (positionMs == C.TIME_UNSET) {
                         positionMs
                     } else {
-                        articleTimeline.toChunkMs(player, mediaItemIndex, positionMs).coerceAtLeast(0)
+                        (positionMs - startMsOf(mediaItemIndex)).coerceAtLeast(0)
                     }
                 super.handleSeek(mediaItemIndex, chunkMs, seekCommand).also { playIfPending() }
             }
@@ -202,13 +202,14 @@ internal class SessionPlayer(
     ): ListenableFuture<*> {
         if (articleTimeline.bufferingAtMs != null) hasNewPlaylistSinceBuffering = true
         releaseArticleEnd()
-        startPlaylist(mediaItems.firstOrNull())
-        return super.handleSetMediaItems(
-                mediaItems,
-                startIndex,
-                chunkStartPositionMs(mediaItems, startIndex, startPositionMs),
-            )
-            .also { playIfPending() }
+        showPendingSeek(null)
+        val chunkStartPositionMs =
+            if (startPositionMs == C.TIME_UNSET) {
+                startPositionMs
+            } else {
+                startPositionMs - (mediaItems.getOrNull(startIndex)?.startsAt()?.inWholeMilliseconds ?: 0)
+            }
+        return super.handleSetMediaItems(mediaItems, startIndex, chunkStartPositionMs).also { playIfPending() }
     }
 
     // Forgotten with the playlist, since the session outlives the article: the next one would otherwise be shown at the
@@ -226,21 +227,12 @@ internal class SessionPlayer(
         return removed
     }
 
-    /** Places a new playlist in the article, as its first item says, before its start position is converted. */
-    private fun startPlaylist(first: MediaItem?) {
-        showPendingSeek(null)
-        val started = first?.playlistTimeline() ?: return
-        articleTimeline =
-            articleTimeline.copy(playlistStartMs = started.playlistStartMs, durationMs = started.durationMs)
-    }
+    /** Where the item the player is on starts in the article. */
+    private fun currentStartMs(): Long = player.currentMediaItem?.startsAt()?.inWholeMilliseconds ?: 0
 
-    /** [startPositionMs] into the article, as a position into item [startIndex] of the new playlist [mediaItems]. */
-    private fun chunkStartPositionMs(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): Long {
-        if (startPositionMs == C.TIME_UNSET) return startPositionMs
-
-        val beforeMs = mediaItems.take(startIndex).sumOf { it.measuredDurationMs() ?: 0 }
-        return startPositionMs - articleTimeline.playlistStartMs - beforeMs
-    }
+    /** Where item [index] of the playlist starts in the article. */
+    private fun startMsOf(index: Int): Long =
+        if (index in 0 until player.mediaItemCount) player.getMediaItemAt(index).startsAt().inWholeMilliseconds else 0
 
     /**
      * Prepares the player, and stops buffering for a seek once the seek's new playlist has been set. Preparing before

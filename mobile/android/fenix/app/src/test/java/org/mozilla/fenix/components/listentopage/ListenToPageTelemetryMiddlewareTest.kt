@@ -130,9 +130,12 @@ class ListenToPageTelemetryMiddlewareTest {
 
     @Test
     fun `WHEN the default voice is selected THEN record voice_selected is_default true`() {
-        val default = Voice(id = "en-us", locale = Locale.US)
+        val default = Voice(id = "en-us", locale = Locale.US, engine = "com.example.tts")
         val store =
-            createStore(phase = PlaybackPhase.Paused, availableVoices = listOf(default, Voice("en-gb", Locale.UK)))
+            createStore(
+                phase = PlaybackPhase.Paused,
+                availableVoices = listOf(default, Voice("en-gb", Locale.UK, engine = "com.example.tts")),
+            )
 
         store.dispatch(ListenAction.User.Voices.VoiceSelected(default))
 
@@ -141,8 +144,8 @@ class ListenToPageTelemetryMiddlewareTest {
 
     @Test
     fun `WHEN a non-default voice is selected THEN record voice_selected is_default false`() {
-        val default = Voice(id = "en-us", locale = Locale.US)
-        val other = Voice(id = "en-gb", locale = Locale.UK)
+        val default = Voice(id = "en-us", locale = Locale.US, engine = "com.example.tts")
+        val other = Voice(id = "en-gb", locale = Locale.UK, engine = "com.example.tts")
         val store = createStore(phase = PlaybackPhase.Paused, availableVoices = listOf(default, other))
 
         store.dispatch(ListenAction.User.Voices.VoiceSelected(other))
@@ -180,20 +183,20 @@ class ListenToPageTelemetryMiddlewareTest {
 
     @Test
     fun `WHEN the user selects a voice THEN record voice_selected source user_selected`() {
-        val voice = Voice(id = "en-us", locale = Locale.US)
+        val voice = Voice(id = "en-us", locale = Locale.US, engine = "com.example.tts")
         val store = createStore(phase = PlaybackPhase.Paused, availableVoices = listOf(voice))
 
-        store.dispatch(ListenAction.User.Voices.VoiceSelected(voice, ListenAction.User.Voices.VoiceSource.UserSelected))
+        store.dispatch(ListenAction.User.Voices.VoiceSelected(voice))
 
         assertEquals("user_selected", ListenToPage.voiceSelected.testGetValue()!!.single().extra?.get("source"))
     }
 
     @Test
     fun `WHEN a voice is chosen as a fallback THEN record voice_selected source fallback`() {
-        val voice = Voice(id = "en-us", locale = Locale.US)
+        val voice = Voice(id = "en-us", locale = Locale.US, engine = "com.example.tts")
         val store = createStore(phase = PlaybackPhase.Paused, availableVoices = listOf(voice))
 
-        store.dispatch(ListenAction.User.Voices.VoiceSelected(voice, ListenAction.User.Voices.VoiceSource.Fallback))
+        store.dispatch(ListenAction.System.Voices.FallbackVoiceChosen(voice))
 
         assertEquals("fallback", ListenToPage.voiceSelected.testGetValue()!!.single().extra?.get("source"))
     }

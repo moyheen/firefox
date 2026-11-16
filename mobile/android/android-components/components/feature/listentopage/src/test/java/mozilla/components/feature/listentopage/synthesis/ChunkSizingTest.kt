@@ -5,7 +5,6 @@
 package mozilla.components.feature.listentopage.synthesis
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import mozilla.components.feature.listentopage.content.TextChunker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

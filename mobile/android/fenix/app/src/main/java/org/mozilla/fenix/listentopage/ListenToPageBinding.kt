@@ -10,15 +10,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.action.ListenToPageAction
+import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.store.BrowserStore
-import mozilla.components.feature.listentopage.ListenError
 import mozilla.components.feature.listentopage.ListenState
 import mozilla.components.feature.listentopage.ListenStore
-import mozilla.components.feature.listentopage.playback.PlaybackPhase
+import mozilla.components.feature.listentopage.isPlayingOrBuffering
 import mozilla.components.lib.state.helpers.AbstractBinding
 
 /**
- * Binding to update the [BrowserStore] by listening to changes to [ListenState].
+ * Binding between the [ListenStore] and the [BrowserStore]: it marks the tab being read out loud in the [BrowserStore].
  *
  * @param listenStore [ListenStore] used to listen for changes to [ListenState].
  * @param browserStore [BrowserStore] to update with the tab ID that is being read out loud.
@@ -37,7 +37,7 @@ class ListenToPageBinding(
             .map {
                 ListenTabStatus(
                     tabId = it.tabId,
-                    showMediaIcon = shouldShowMediaIcon(it.playbackState.phase, it.error),
+                    showMediaIcon = it.playbackState.isPlayingOrBuffering && it.error == null,
                 )
             }
             .distinctUntilChanged()
@@ -59,10 +59,13 @@ class ListenToPageBinding(
                 previousTabId = tabId
             }
     }
-
-    private fun shouldShowMediaIcon(phase: PlaybackPhase, error: ListenError?): Boolean {
-        return (phase == PlaybackPhase.Playing || phase == PlaybackPhase.Buffering) && error == null
-    }
 }
+
+/**
+ * The page this tab shows: in reader mode the article the reader view renders, rather than the reader view's own URL.
+ * It is the URL a session is asked to read.
+ */
+val TabSessionState.listenUrl: String
+    get() = readerState.activeUrl ?: content.url
 
 private data class ListenTabStatus(val tabId: String?, val showMediaIcon: Boolean)

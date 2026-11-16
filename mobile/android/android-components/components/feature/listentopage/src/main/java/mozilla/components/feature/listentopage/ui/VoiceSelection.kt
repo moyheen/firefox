@@ -71,7 +71,7 @@ private fun List<Voice>.toMenuItems(
 
 private val previewVoices =
     listOf(Locale.UK, Locale.US, Locale.CANADA, Locale.forLanguageTag("en-AU")).map {
-        Voice(id = "en-${it.country.lowercase()}-local", locale = it)
+        Voice(id = "en-${it.country.lowercase()}-local", locale = it, engine = "preview")
     }
 
 // Dropdown menus are currently only previewable in interactive mode - give it a shot if you don't see anything
