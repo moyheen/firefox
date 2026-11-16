@@ -45,4 +45,14 @@ class PlaybackUiStateTest {
         val state = PlaybackPhase.Buffering.toUiState(error = null)
         assertEquals(expected = PlaybackUiState.Buffering, actual = state)
     }
+
+    @Test
+    fun `Test that a failed player whose error was dismissed is paused`() {
+        assertEquals(expected = PlaybackUiState.Paused, actual = PlaybackPhase.Failed.toUiState(error = null))
+    }
+
+    @Test
+    fun `Test that a player that read the article to its end is paused`() {
+        assertEquals(expected = PlaybackUiState.Paused, actual = PlaybackPhase.Ended.toUiState(error = null))
+    }
 }
