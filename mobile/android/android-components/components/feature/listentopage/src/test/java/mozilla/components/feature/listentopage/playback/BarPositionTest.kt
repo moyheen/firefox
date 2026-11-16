@@ -4,7 +4,7 @@
 
 package mozilla.components.feature.listentopage.playback
 
-import mozilla.components.feature.listentopage.ArticleProgress
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

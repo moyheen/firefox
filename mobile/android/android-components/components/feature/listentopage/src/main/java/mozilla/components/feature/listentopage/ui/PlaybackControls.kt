@@ -34,12 +34,12 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.LayoutDirection
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.theme.AcornTheme
-import mozilla.components.feature.listentopage.ArticleProgress
 import mozilla.components.feature.listentopage.ListenAction
-import mozilla.components.feature.listentopage.PlaybackSpeed
 import mozilla.components.feature.listentopage.R
-import mozilla.components.feature.listentopage.Voice
 import mozilla.components.feature.listentopage.VoiceState
+import mozilla.components.feature.listentopage.playback.PlaybackSpeed
+import mozilla.components.feature.listentopage.progress.ArticleProgress
+import mozilla.components.feature.listentopage.voices.Voice
 import mozilla.components.ui.icons.R as iconsR
 
 /** Listen to page audio player controls */

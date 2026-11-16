@@ -27,12 +27,12 @@ import kotlinx.coroutines.flow.map
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.compose.base.button.FilledButton
-import mozilla.components.feature.listentopage.ArticleProgress
 import mozilla.components.feature.listentopage.ListenAction
 import mozilla.components.feature.listentopage.ListenState
 import mozilla.components.feature.listentopage.ListenStore
 import mozilla.components.feature.listentopage.PlaybackState
 import mozilla.components.feature.listentopage.listenReducer
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import org.mozilla.fenix.components.listentopage.ListenDebugController
 import org.mozilla.fenix.theme.FirefoxTheme
 

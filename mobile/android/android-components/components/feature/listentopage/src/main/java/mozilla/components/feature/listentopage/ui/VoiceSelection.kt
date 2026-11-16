@@ -24,7 +24,7 @@ import mozilla.components.compose.base.menu.MenuItem.TextItem
 import mozilla.components.compose.base.text.Text
 import mozilla.components.compose.base.theme.AcornTheme
 import mozilla.components.feature.listentopage.R
-import mozilla.components.feature.listentopage.Voice
+import mozilla.components.feature.listentopage.voices.Voice
 
 /** UI to allow the user to manage their selected voice for narration. */
 @Composable

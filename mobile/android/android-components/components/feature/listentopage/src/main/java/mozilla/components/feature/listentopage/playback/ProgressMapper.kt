@@ -5,7 +5,7 @@
 package mozilla.components.feature.listentopage.playback
 
 import kotlin.time.Duration
-import mozilla.components.feature.listentopage.ArticleProgress
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 
 /** A place in the article: which chunk holds it, and how far into that chunk it is. */
 internal data class ChunkPosition(val chunkIndex: Int, val offsetMs: Long)

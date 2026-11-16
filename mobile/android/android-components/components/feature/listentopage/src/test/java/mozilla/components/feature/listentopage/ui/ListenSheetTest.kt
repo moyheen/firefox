@@ -34,14 +34,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import mozilla.components.compose.base.theme.AcornTheme
-import mozilla.components.feature.listentopage.ArticleProgress
 import mozilla.components.feature.listentopage.ListenAction
 import mozilla.components.feature.listentopage.ListenError
-import mozilla.components.feature.listentopage.PlaybackPhase
-import mozilla.components.feature.listentopage.PlaybackSpeed
 import mozilla.components.feature.listentopage.PlayerMode
 import mozilla.components.feature.listentopage.R
 import mozilla.components.feature.listentopage.VoiceState
+import mozilla.components.feature.listentopage.playback.PlaybackPhase
+import mozilla.components.feature.listentopage.playback.PlaybackSpeed
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

@@ -4,6 +4,7 @@
 
 package mozilla.components.feature.listentopage
 
+import mozilla.components.feature.listentopage.playback.PlaybackSpeed
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

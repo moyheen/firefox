@@ -30,10 +30,10 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.tooling.preview.PreviewParameter
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.theme.AcornTheme
-import mozilla.components.feature.listentopage.ArticleProgress
 import mozilla.components.feature.listentopage.ListenAction
 import mozilla.components.feature.listentopage.PlayerMode
 import mozilla.components.feature.listentopage.R
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import mozilla.components.ui.icons.R as iconsR
 
 /** Listen to page audio player in compact state */

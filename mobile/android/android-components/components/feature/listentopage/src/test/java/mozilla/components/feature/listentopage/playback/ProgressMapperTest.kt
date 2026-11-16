@@ -7,7 +7,7 @@ package mozilla.components.feature.listentopage.playback
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import mozilla.components.feature.listentopage.ArticleProgress
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import mozilla.components.feature.listentopage.synthesis.SpeechRate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

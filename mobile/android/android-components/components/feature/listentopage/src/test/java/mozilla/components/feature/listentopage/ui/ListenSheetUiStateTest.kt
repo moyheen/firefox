@@ -5,12 +5,12 @@
 package mozilla.components.feature.listentopage.ui
 
 import kotlin.test.assertEquals
-import mozilla.components.feature.listentopage.ArticleProgress
 import mozilla.components.feature.listentopage.ListenState
-import mozilla.components.feature.listentopage.PlaybackPhase
-import mozilla.components.feature.listentopage.PlaybackSpeed
 import mozilla.components.feature.listentopage.PlaybackState
 import mozilla.components.feature.listentopage.PlayerMode
+import mozilla.components.feature.listentopage.playback.PlaybackPhase
+import mozilla.components.feature.listentopage.playback.PlaybackSpeed
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import org.junit.Test
 
 class ListenSheetUiStateTest {

@@ -42,12 +42,12 @@ import java.util.Locale
 import kotlin.time.Duration.Companion.seconds
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.theme.AcornTheme
-import mozilla.components.feature.listentopage.ArticleProgress
 import mozilla.components.feature.listentopage.ListenAction
-import mozilla.components.feature.listentopage.PlaybackSpeed
 import mozilla.components.feature.listentopage.R
 import mozilla.components.feature.listentopage.VoiceState
+import mozilla.components.feature.listentopage.playback.PlaybackSpeed
 import mozilla.components.feature.listentopage.playback.shownDurationMs
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import mozilla.components.ui.icons.R as iconsR
 
 private const val MS_PER_SECOND = 1000L

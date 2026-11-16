@@ -6,19 +6,19 @@ package org.mozilla.fenix.components.listentopage
 
 import java.util.Locale
 import kotlin.test.assertNotNull
-import mozilla.components.feature.listentopage.ArticleProgress
 import mozilla.components.feature.listentopage.ChunkState
 import mozilla.components.feature.listentopage.ListenAction
 import mozilla.components.feature.listentopage.ListenState
 import mozilla.components.feature.listentopage.ListenStore
-import mozilla.components.feature.listentopage.PlaybackPhase
-import mozilla.components.feature.listentopage.PlaybackSpeed
 import mozilla.components.feature.listentopage.PlaybackState
-import mozilla.components.feature.listentopage.Voice
 import mozilla.components.feature.listentopage.VoiceState
 import mozilla.components.feature.listentopage.content.LanguageSource
 import mozilla.components.feature.listentopage.facts.ListenToPageFacts
 import mozilla.components.feature.listentopage.listenReducer
+import mozilla.components.feature.listentopage.playback.PlaybackPhase
+import mozilla.components.feature.listentopage.playback.PlaybackSpeed
+import mozilla.components.feature.listentopage.progress.ArticleProgress
+import mozilla.components.feature.listentopage.voices.Voice
 import mozilla.components.support.base.Component
 import mozilla.components.support.base.facts.Action
 import mozilla.components.support.base.facts.Fact

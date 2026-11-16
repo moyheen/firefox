@@ -36,11 +36,11 @@ import kotlinx.coroutines.flow.take
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineView
-import mozilla.components.feature.listentopage.ArticleProgress
 import mozilla.components.feature.listentopage.ListenAction
 import mozilla.components.feature.listentopage.ListenState
 import mozilla.components.feature.listentopage.ListenStore
 import mozilla.components.feature.listentopage.PlayerMode
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import mozilla.components.feature.listentopage.settings.ListenEnabledState
 import mozilla.components.feature.listentopage.ui.ListenSheet
 import mozilla.components.feature.listentopage.ui.ListenSheetUiState

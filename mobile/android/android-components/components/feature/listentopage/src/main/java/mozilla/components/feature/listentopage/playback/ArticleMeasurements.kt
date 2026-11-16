@@ -8,7 +8,7 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.time.Duration
 import kotlin.time.DurationUnit
-import mozilla.components.feature.listentopage.ArticleProgress
+import mozilla.components.feature.listentopage.progress.ArticleProgress
 import mozilla.components.feature.listentopage.synthesis.SpeechRate
 
 /**
